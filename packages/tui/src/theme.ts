@@ -27,9 +27,15 @@ export const T = {
   selFg: '#0e0f12',
 } as const;
 
-// Shared single-glyph for each module type
+// Shared single-glyph for each module type. `agent` and `instruction`
+// were added when the TUI moved off mock data and onto @harness/core,
+// which surfaces both kinds (see spec/format.md §2.5). They share the
+// persona/dim accent palette since no dedicated wireframe color was
+// specified for them.
 export const GLYPHS: Record<string, string> = {
   persona: '◐',
+  agent: '◑',
+  instruction: '≡',
   mcp: '⌥',
   skill: '✦',
   hook: '⚡',
@@ -40,7 +46,10 @@ export const GLYPHS: Record<string, string> = {
 export const glyphColor = (t: string): string => {
   switch (t) {
     case 'persona':
+    case 'agent':
       return T.persona;
+    case 'instruction':
+      return T.dim;
     case 'mcp':
       return T.mcp;
     case 'skill':

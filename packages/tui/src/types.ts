@@ -6,8 +6,16 @@
 // records `codePin` (the git sha at the moment) so lineage can be traced
 // alongside code without being coupled to it.
 
+// TUI display vocabulary. Includes legacy display aliases the Ink screens
+// were built around (`persona`, `cmd`) and core's canonical newer types
+// (`agent`, `instruction`). The adapter in data/adapters.ts maps from
+// core's enum (chatmode/instruction/prompt/skill/agent/hook/mcp/style)
+// into this union: `chatmode → persona`, `prompt → cmd`, others
+// pass-through. Per spec/format.md §2.5 readers may surface either name.
 export type ModuleType =
   | 'persona'
+  | 'agent'
+  | 'instruction'
   | 'mcp'
   | 'skill'
   | 'hook'
