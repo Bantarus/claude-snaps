@@ -1,0 +1,29 @@
+{
+  "name": "harness-snaps-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Workspace root for the .harness/ format reference implementation.",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck",
+    "spec:examples": "python3 scripts/build_examples.py",
+    "spec:check-agreement": "python3 scripts/check_schema_agreement.py"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.3",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=24.0",
+    "pnpm": ">=9"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
