@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { apmLockHash as apmLockHashOf } from './apm.js';
 import {
@@ -9,7 +9,7 @@ import {
 } from './dag.js';
 import { diff as moduleDiff } from './diff.js';
 import { listSnapshots, readSnapshot, writeSnapshot } from './blob.js';
-import { captureCurrentState, type CaptureScope } from './capture.js';
+import { captureCurrentState } from './capture.js';
 import { EmptyRepositoryError, IntegrityError, IoError } from './errors.js';
 import { IndexDb, type ListSnapshotsFilter, type ReindexResult } from './index_db.js';
 import { listRefs, readHead, readRef, resolveHead, writeRef } from './refs.js';
@@ -26,7 +26,6 @@ format_version = "0.1"
 
 [capture]
 auto_snapshot_on_session = true
-scope = "project"
 include_transcripts = false
 mask_paths = []
 
@@ -37,12 +36,6 @@ lockfile_path = "apm.lock.yaml"
 [gitignore]
 policy = "private"
 `;
-
-interface RepoConfig {
-  captureScope: CaptureScope;
-}
-
-const DEFAULT_REPO_CONFIG: RepoConfig = { captureScope: 'project' };
 
 export interface RepoInitOptions {
   defaultBranch?: string;
@@ -57,7 +50,6 @@ export class Repo {
     public readonly projectRoot: string,
     public readonly harnessDir: string,
     private readonly db: IndexDb,
-    public readonly config: RepoConfig,
   ) {}
 
   /**
@@ -94,8 +86,7 @@ export class Repo {
       throw new IoError(`no .harness/ directory at ${projectRoot}; call Repo.init() first`);
     }
     const db = IndexDb.open(harnessDir);
-    const config = readRepoConfig(harnessDir);
-    return new Repo(projectRoot, harnessDir, db, config);
+    return new Repo(projectRoot, harnessDir, db);
   }
 
   // ── HEAD / refs ──────────────────────────────────────────────────────
@@ -204,11 +195,10 @@ export class Repo {
   /**
    * Capture the live state of `.claude/` (and APM lockfile, if any) as a
    * Module[]. Same code path the SessionStart hook calls — see
-   * spec/hooks.md §2. Scope is read from `[capture].scope` in the
-   * repo's config (spec/format.md §1.1).
+   * spec/hooks.md §2.
    */
   workingTree(): Module[] {
-    return captureCurrentState(this.projectRoot, { scope: this.config.captureScope });
+    return captureCurrentState(this.projectRoot);
   }
 
   // ── hook helpers ─────────────────────────────────────────────────────
@@ -277,50 +267,4 @@ export class Repo {
       throw new IntegrityError('failed to close index db', cause);
     }
   }
-}
-
-/**
- * Read `.harness/config` and pull out the values core actually consumes.
- * The full config schema lives in spec/schema/config.schema.json; this
- * function intentionally extracts only what we need today, so adding a
- * new key elsewhere doesn't require a parser change.
- *
- * The reader is a tiny line-based TOML extractor — sufficient for the
- * flat keys we read (one section, one string value). Falls back to the
- * default if the file is missing, malformed, or missing the key.
- */
-function readRepoConfig(harnessDir: string): RepoConfig {
-  const path = join(harnessDir, 'config');
-  let raw: string;
-  try {
-    raw = readFileSync(path, 'utf-8');
-  } catch {
-    return DEFAULT_REPO_CONFIG;
-  }
-  const scope = extractCaptureScope(raw);
-  return { captureScope: scope };
-}
-
-function extractCaptureScope(toml: string): CaptureScope {
-  // Walk lines; track which `[section]` we're in; match `scope = "..."`
-  // only inside `[capture]`. Comments after `#` are ignored. Robust
-  // against indentation and extra whitespace.
-  let section = '';
-  for (const line of toml.split(/\r?\n/)) {
-    const stripped = line.replace(/#.*$/, '').trim();
-    if (stripped === '') continue;
-    const sectionMatch = /^\[([A-Za-z0-9_.]+)\]\s*$/.exec(stripped);
-    if (sectionMatch !== null) {
-      section = sectionMatch[1] ?? '';
-      continue;
-    }
-    if (section !== 'capture') continue;
-    const kvMatch = /^scope\s*=\s*"([^"]*)"\s*$/.exec(stripped);
-    if (kvMatch !== null) {
-      const value = kvMatch[1] ?? '';
-      if (value === 'project' || value === 'user') return value;
-      return DEFAULT_REPO_CONFIG.captureScope;
-    }
-  }
-  return DEFAULT_REPO_CONFIG.captureScope;
 }

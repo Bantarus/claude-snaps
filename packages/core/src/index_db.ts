@@ -114,13 +114,6 @@ export class IndexDb {
     );
     snap.modules.forEach((m, i) => {
       const src = m.source;
-      // `user`-kind shares the source_path column with `local` — they're
-      // distinguished by source_kind, which the rebuildSource path below
-      // also keys on when reading rows back out.
-      const path =
-        src.kind === 'local' ? src.path
-        : src.kind === 'user' ? src.path
-        : null;
       modStmt.run(
         snap.id, i, m.type, m.name, m.version ?? null,
         m.enabled ? 1 : 0, m.configHash ?? null,
@@ -129,7 +122,7 @@ export class IndexDb {
         src.kind === 'apm' ? src.resolvedCommit : null,
         src.kind === 'apm' ? src.depth : null,
         src.kind === 'apm' ? (src.resolvedBy ?? null) : null,
-        path,
+        src.kind === 'local' ? src.path : null,
       );
     });
   }
@@ -420,12 +413,6 @@ function rebuildSource(row: ModuleRow): import('./types.js').ModuleSource {
       throw new ParseError(`source_kind=local but source_path is null on row ${row.snapshot_id}/${row.position}`);
     }
     return { kind: 'local', path: row.source_path };
-  }
-  if (row.source_kind === 'user') {
-    if (row.source_path === null) {
-      throw new ParseError(`source_kind=user but source_path is null on row ${row.snapshot_id}/${row.position}`);
-    }
-    return { kind: 'user', path: row.source_path };
   }
   if (row.source_kind === 'apm') {
     if (

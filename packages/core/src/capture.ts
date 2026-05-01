@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { basename, join, relative } from 'node:path';
 import { readApmLock, type ApmLockEntry } from './apm.js';
 import { IoError } from './errors.js';
@@ -14,78 +13,23 @@ import type { Module, ModuleSource, ModuleType } from './types.js';
 //
 // One implementation, two consumers — see spec/hooks.md §2.1.
 
-export type CaptureScope = 'project' | 'user';
-
 const BUILTIN_TOOLS = [
   'Bash', 'Edit', 'Glob', 'Grep', 'Read', 'Write',
   'Task', 'TodoWrite', 'WebFetch', 'WebSearch', 'NotebookEdit',
 ] as const;
 
-export interface CaptureOptions {
-  /**
-   * Capture scope per spec/format.md §1.1. `'project'` (default) walks
-   * only `<projectRoot>/.claude/` and emits `kind: 'local'` for each
-   * match. `'user'` additionally walks `$HOME/.claude/` and emits
-   * `kind: 'user'` (with $HOME-relative paths) for those matches.
-   */
-  scope?: CaptureScope;
-}
-
 /**
- * Walk the configured tree(s) (per [capture].scope), enumerate
- * primitives, and produce a canonical Module[]. Order follows
- * spec/hooks.md §2.2 (by canonical type, then by name UTF-16 code
- * units) so identical compositions produce identical snapshot ids.
+ * Walk `<projectRoot>/.claude/` (and `CLAUDE.md` at the project root),
+ * enumerate primitives, and produce a canonical Module[]. The order of
+ * the array follows spec/hooks.md §2.2 (by canonical type, then by
+ * name UTF-16 code units) so identical compositions produce identical
+ * snapshot ids.
  *
  * @throws {IoError} on filesystem failure other than ENOENT.
  */
-export function captureCurrentState(projectRoot: string, options: CaptureOptions = {}): Module[] {
-  const scope = options.scope ?? 'project';
+export function captureCurrentState(projectRoot: string): Module[] {
+  const claudeDir = join(projectRoot, '.claude');
   const modules: Module[] = [];
-
-  // Project-level walk — always runs, regardless of scope.
-  walkClaudeRoot(modules, projectRoot, 'local');
-
-  // User-level walk — only when scope = 'user'. Skip silently if the
-  // root resolves to the same directory we already walked (e.g. a
-  // contrived setup where projectRoot === $HOME).
-  if (scope === 'user') {
-    const userRoot = homedir();
-    if (userRoot !== projectRoot) {
-      walkClaudeRoot(modules, userRoot, 'user');
-    }
-  }
-
-  // builtin: Claude Code's built-in tool surface. Always present,
-  // always enabled, no path. Fixed set in v0.1.
-  for (const name of BUILTIN_TOOLS) {
-    modules.push({
-      type: 'mcp', name, enabled: true, source: { kind: 'builtin' },
-    });
-  }
-
-  // APM enrichment: replace `local` modules whose path is in a lockfile
-  // entry's deployed_files with `apm` modules. Per spec/apm-integration.md §2.
-  // Only project-level `local` modules are eligible — user-level modules
-  // are per-developer and outside APM's resolution model.
-  const lock = safeReadApmLock(projectRoot);
-  if (lock !== null) {
-    enrichWithApm(modules, lock);
-  }
-
-  // Stable ordering — spec/hooks.md §2.2
-  return modules.sort(canonicalModuleOrder);
-}
-
-/**
- * Walk a single `.claude/` root and the project-style instruction files
- * alongside it, pushing matches into `modules`. The `kind` argument
- * controls whether emitted paths are project-relative (kind='local')
- * or root-relative (kind='user', i.e. $HOME-relative when called for
- * the user-level walk).
- */
-function walkClaudeRoot(modules: Module[], root: string, kind: 'local' | 'user'): void {
-  const claudeDir = join(root, '.claude');
 
   // chatmode + agent: .claude/agents/*.md
   for (const path of safeListDir(join(claudeDir, 'agents'), '.md')) {
@@ -95,7 +39,7 @@ function walkClaudeRoot(modules: Module[], root: string, kind: 'local' | 'user')
       type, name,
       enabled: true,
       configHash: hashFile(path),
-      source: makeSource(kind, root, path),
+      source: { kind: 'local', path: relativePosix(projectRoot, path) },
     });
   }
 
@@ -110,7 +54,7 @@ function walkClaudeRoot(modules: Module[], root: string, kind: 'local' | 'user')
         type: 'skill', name: entry,
         enabled: true,
         configHash: hashFile(skillFile),
-        source: makeSource(kind, root, skillFile),
+        source: { kind: 'local', path: relativePosix(projectRoot, skillFile) },
       });
     }
   }
@@ -122,7 +66,7 @@ function walkClaudeRoot(modules: Module[], root: string, kind: 'local' | 'user')
       type: 'prompt', name,
       enabled: true,
       configHash: hashFile(path),
-      source: makeSource(kind, root, path),
+      source: { kind: 'local', path: relativePosix(projectRoot, path) },
     });
   }
 
@@ -132,7 +76,7 @@ function walkClaudeRoot(modules: Module[], root: string, kind: 'local' | 'user')
       type: 'style', name: basename(path, '.md'),
       enabled: true,
       configHash: hashFile(path),
-      source: makeSource(kind, root, path),
+      source: { kind: 'local', path: relativePosix(projectRoot, path) },
     });
   }
 
@@ -144,38 +88,49 @@ function walkClaudeRoot(modules: Module[], root: string, kind: 'local' | 'user')
       modules.push({
         type: 'mcp', name, enabled: true,
         configHash: hashJson(block),
-        source: makeSource(kind, root, settingsPath),
+        source: { kind: 'local', path: relativePosix(projectRoot, settingsPath) },
       });
     }
     for (const [name, block] of hookEntries(settings)) {
       modules.push({
         type: 'hook', name, enabled: true,
         configHash: hashJson(block),
-        source: makeSource(kind, root, settingsPath),
+        source: { kind: 'local', path: relativePosix(projectRoot, settingsPath) },
       });
     }
   }
 
-  // instruction: CLAUDE.md (project root for kind='local'; $HOME root for kind='user')
+  // instruction: CLAUDE.md (project) and AGENTS.md if present
   for (const fname of ['CLAUDE.md', 'AGENTS.md']) {
-    const p = join(root, fname);
+    const p = join(projectRoot, fname);
     if (existsSync(p) && statSync(p).isFile()) {
       modules.push({
         type: 'instruction', name: fname,
         enabled: true,
         configHash: hashFile(p),
-        source: kind === 'local'
-          ? { kind: 'local', path: fname }
-          : { kind: 'user', path: fname },
+        source: { kind: 'local', path: fname },
       });
     }
   }
-}
 
-function makeSource(kind: 'local' | 'user', root: string, path: string): ModuleSource {
-  return kind === 'local'
-    ? { kind: 'local', path: relativePosix(root, path) }
-    : { kind: 'user',  path: relativePosix(root, path) };
+  // builtin: Claude Code's built-in tool surface. Always present, always
+  // enabled, no path. Fixed set in v0.1; future versions may detect
+  // subsets via permissions config.
+  for (const name of BUILTIN_TOOLS) {
+    modules.push({
+      type: 'mcp', name, enabled: true, source: { kind: 'builtin' },
+    });
+  }
+
+  // APM enrichment: replace `local` modules whose path is in a lockfile
+  // entry's deployed_files with `apm` modules. Per spec/apm-integration.md §2.
+  const lock = safeReadApmLock(projectRoot);
+  if (lock !== null) {
+    enrichWithApm(modules, lock);
+  }
+
+  // Stable ordering — spec/hooks.md §2.2
+  return modules.sort(canonicalModuleOrder);
 }
 
 // ── private ────────────────────────────────────────────────────────────────

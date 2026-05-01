@@ -76,35 +76,27 @@ Hard rules:
 - All on-disk paths MUST use forward-slash separators regardless of host OS.
 - All text files (`HEAD`, refs, `config`) MUST be UTF-8 with LF line endings.
 
-### 1.1 Capture scope (`[capture].scope`)
+### 1.1 Capture scope: project-level only (v0.1)
 
-A snapshot's capture scope is controlled by the `[capture].scope` value in
-[`.harness/config`](#7-the-config-file). Two values are defined:
+A v0.1 snapshot captures **only** primitives defined under the project's
+`<projectRoot>/.claude/` tree (plus `CLAUDE.md` / `AGENTS.md` at the project
+root). User-level config — `~/.claude/skills/`, `~/.claude/agents/`,
+`~/.claude/settings.json`, `~/.claude/CLAUDE.md`, etc. — is intentionally
+**not** captured even when those primitives are active in the runtime that
+fires the SessionStart hook.
 
-| Value | Walk roots | Module `source.kind` emitted |
-|---|---|---|
-| `"project"` (default) | `<projectRoot>/.claude/`, `<projectRoot>/CLAUDE.md`, `<projectRoot>/AGENTS.md` | `local` (with `apm` enrichment per §6) |
-| `"user"` | The above **plus** `$HOME/.claude/` | `local` for project-level matches; **`user`** for `$HOME/.claude/` matches (see §2.6) |
+Rationale: snapshots are designed to be shared across machines (team-sync
+in v0.2). Including per-developer user-level config would contaminate every
+shared snapshot with differences neither developer can change, defeating
+the comparability goal. The blind spot is by design: if a primitive must
+be reproducible on a different machine, it MUST live in the project's
+`.claude/` (or be an APM dependency).
 
-**Default rationale.** Snapshots are designed to be shareable across
-machines (team-sync in v0.2). Per-developer user-level config would
-contaminate every shared snapshot with differences neither developer
-can change. The default keeps the shared-snapshot use case clean.
-
-**`scope = "user"` is opt-in for solo / fidelity-over-portability work.**
-The runtime that fires the SessionStart hook may be using primitives
-defined under `~/.claude/` (skills, agents, settings.json hooks). When
-the writer cares about reproducing the *full* harness composition on the
-same machine — at the cost of cross-machine portability — flipping
-scope captures them. The new `user` source kind is the structural signal
-that a module is per-developer; cross-machine consumers can filter on it
-without parsing paths.
-
-Implementations MUST honor the configured scope: under `"project"` they
-MUST NOT walk `~/.claude/` or any non-project path. Under `"user"` they
-MUST walk both roots and emit the appropriate kind for each match.
-Implementations MAY surface a one-time advisory when scope is `"project"`
-and an active user-level primitive is observed but not captured.
+Implementations MUST NOT walk `~/.claude/` or any non-project path during
+capture. Implementations MAY surface a one-time advisory note to the user
+when an active user-level primitive (skill, hook, etc.) is observed but
+not captured, but MUST NOT include it in the blob. User-level capture is
+a v0.2 candidate gated on team-sync semantics being designed.
 
 ## 2. Snapshot blob format
 
@@ -245,13 +237,12 @@ Where the canonical set differs from APM, see
 
 ### 2.6 The `source` discriminator
 
-`source` is a tagged union on `kind`. Four variants are defined:
+`source` is a tagged union on `kind`. In v0.1, three variants are defined:
 
 ```ts
 type ModuleSource =
   | { kind: "apm";     package: string; resolvedCommit: string; depth: number; resolvedBy?: string }
   | { kind: "local";   path: string }
-  | { kind: "user";    path: string }
   | { kind: "builtin" };
 ```
 
@@ -264,16 +255,6 @@ type ModuleSource =
 - **`local`** — the module was defined in the project's own files. Required:
   `path`, the repo-relative POSIX path to the file or directory. Forward
   slashes only; no leading `/`.
-
-- **`user`** — the module was defined in the writer's user-level config
-  (`$HOME/.claude/`). Required: `path`, **`$HOME`-relative POSIX** (e.g.
-  `.claude/skills/research/SKILL.md`). Forward slashes only; no leading `/`.
-  Per §1.1 this kind is only emitted when `[capture].scope = "user"`. A
-  `user` module is **not portable across machines** — its content lives
-  outside the project tree and the path is interpreted relative to whoever
-  is reading the snapshot, not whoever wrote it. Cross-machine consumers
-  (team-sync, shared diffs) SHOULD filter `user`-kind modules before
-  rendering or comparing — see §9.2.
 
 - **`builtin`** — built into the agent runtime (e.g. Claude Code's Read,
   Write, Bash). No other fields. Builtins are captured so the snapshot
@@ -649,7 +630,6 @@ format_version = "0.1"
 
 [capture]
 auto_snapshot_on_session = true   # SessionStart hook installs / reads this
-scope                    = "project"  # "project" (default) | "user"; see §1.1
 include_transcripts      = false  # copy session JSONL into transcripts/
 mask_paths               = []     # globs; redact matches from local source paths
 
@@ -719,20 +699,47 @@ absent, treat as `"0.1"`.
   is in [`examples/compat-fixtures/`](examples/compat-fixtures/) — load it
   and confirm the unknown-kind module survives a read/write round-trip
   unchanged to verify conformance with this rule.
-- **`source.kind: "user"` and cross-machine sharing.** Modules with
-  `kind: "user"` are per-developer (their `path` resolves under
-  `$HOME` of whoever wrote the snapshot — see §2.6). Implementations
-  that share snapshots across machines (team-sync, cross-developer
-  `harness diff`, public publication) SHOULD filter `user`-kind
-  modules out of comparisons by default, surfacing them only when
-  the consumer explicitly opts in. The blob still records them so a
-  return to the writer's machine reproduces the full composition;
-  the filter is rendering-side, not storage-side.
 - The `_schema.version` integer is the SQLite schema version. Mismatches
   between an existing `lineage.sqlite` and the implementation's known
   version trigger reindex (drop and rebuild from `snapshots/`).
 
-### 9.3 What v0.2 is expected to add
+### 9.3 What constitutes a minor bump within the v0.1.x family
+
+The minor-version digit moves only for **additive, reader-compatible**
+changes. A v0.1.0 reader, following the §9.2 unknown-field-preservation
+rule, MUST be able to round-trip and render any v0.1.x blob without
+data loss. Concretely:
+
+**Counts as a minor bump (v0.1.0 → v0.1.x):**
+
+- Adding a new **optional top-level field** to `Snapshot`. v0.1.0 readers
+  preserve it as an unknown field per §9.2. Example: v0.1.1 added
+  `model` and `permissionMode` — both optional, absent on older blobs,
+  preserved verbatim on round-trip by older readers.
+- Adding a new **optional `Module` field**. Same rule.
+- Tightening an existing pattern or CHECK constraint that was previously
+  permissive (so previously-rejecting writers continue to reject).
+
+**Does NOT count as a minor bump (requires a major bump or `x-` prefix):**
+
+- Adding a new value to an existing closed enum (`kind`, `source.kind`).
+  v0.1.0 readers MUST tolerate unknown `source.kind` per §9.2 (preserve
+  verbatim, render opaque), so a writer experimenting with a new kind
+  SHOULD use the `x-` prefix until the spec adopts it normatively. A
+  normative addition (without `x-`) is a major bump because it changes
+  what writers MUST emit; a v0.1.0 writer would never emit the new kind.
+- Adding a new **required** field (would break v0.1.0 reader validation).
+- Removing a field, renaming a field, changing a field's type.
+- Changing the canonical-bytes derivation rule (§3.1) or the module
+  ordering rule (§2.5/hooks.md §2.2).
+
+**Process check.** Any normative addition (even an "additive optional
+field") should pair with: a §9.4 entry in the v0.2 list, a paragraph in
+the relevant section, and a `compat-<topic>/` example fixture exercising
+the present-and-populated case. The `harness-spec-amend` skill in
+`.claude/skills/` codifies the workflow.
+
+### 9.4 What v0.2 is expected to add
 
 Non-normative; recorded for orientation only.
 

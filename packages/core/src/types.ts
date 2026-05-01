@@ -15,11 +15,6 @@ export type ModuleType =
 export type ModuleSource =
   | { kind: 'apm'; package: string; resolvedCommit: string; depth: number; resolvedBy?: string }
   | { kind: 'local'; path: string }
-  // `user`-kind modules live under $HOME/.claude/ on the writer's machine
-  // and are emitted only when [capture].scope = "user" (spec/format.md §1.1).
-  // Path is $HOME-relative POSIX. Per §9.2, cross-machine consumers SHOULD
-  // filter user-kind modules out of comparisons by default.
-  | { kind: 'user'; path: string }
   | { kind: 'builtin' }
   // Forward-compat per spec/format.md §9.2: unknown source kinds with the
   // `x-` prefix are preserved verbatim and treated as opaque.

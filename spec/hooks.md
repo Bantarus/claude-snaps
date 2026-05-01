@@ -138,15 +138,11 @@ For each captured module, the hook MUST:
 { kind: "local", path: "CLAUDE.md" }` and a `configHash` over its full
 file bytes.
 
-The hook's walk roots are determined by `[capture].scope` per
-[format.md §1.1](format.md#11-capture-scope-capturescope). Under the
-default `scope = "project"` the hook MUST NOT walk `~/.claude/` or any
-non-project path. Under `scope = "user"` the hook MUST also walk
-`$HOME/.claude/`, emitting `source.kind: "user"` for the resulting
-modules with paths relative to `$HOME` (see [format.md §2.6](format.md#26-the-source-discriminator)).
-Implementations that share snapshots across machines should consult
-[format.md §9.2](format.md#92-forward-compat-unknown-fields-and-variants)
-on filtering `user`-kind modules in cross-developer diffs.
+The hook MUST NOT walk user-level `~/.claude/` or any non-project path —
+v0.1 capture is project-only by design. See
+[format.md §1.1](format.md#11-capture-scope-project-level-only-v01)
+for the rationale (portability across machines outweighs fidelity to a
+single developer's runtime). User-level capture is a v0.2 candidate.
 
 ### 2.2 Module ordering
 
@@ -168,7 +164,7 @@ deduplication.
 
 - File contents of local-source modules. The blob records paths only;
   reproducing local sources from snapshot alone is not supported. See
-  [format.md §9.3](format.md#93-what-v02-is-expected-to-add).
+  [format.md §9.4](format.md#94-what-v02-is-expected-to-add).
 - Permissions / settings beyond what's needed to identify a module.
   `enabled` is recorded; the full ACL is not.
 - Process-level state (env vars, working directory beyond `--cwd`).

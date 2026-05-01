@@ -6,7 +6,6 @@ format_version = "0.1"
 
 [capture]
 auto_snapshot_on_session = true
-scope = "project"
 include_transcripts = false
 mask_paths = []
 

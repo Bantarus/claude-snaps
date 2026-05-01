@@ -143,7 +143,7 @@ Given a snapshot at `.harness/snapshots/<aa>/<rest>.json`, the operation
 
 The contract is: **APM-sourced primitives are reproducible via APM;
 local-source primitives in v0.1 are not.** v0.2 is expected to address
-local content storage; see [format.md §9.3](format.md#93-what-v02-is-expected-to-add).
+local content storage; see [format.md §9.4](format.md#94-what-v02-is-expected-to-add).
 
 ## 6. Worked example
 
