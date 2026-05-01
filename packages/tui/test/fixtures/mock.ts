@@ -1,4 +1,4 @@
-import type { Snapshot, Session, WorkingTree } from '../types.js';
+import type { Snapshot, Session, WorkingTree } from '../../src/types.js';
 
 // ──────────────────────────────────────────────────────────────
 // Snapshot lineage (newest first in this list)
@@ -130,7 +130,7 @@ function v01Modules() {
     { type: 'hook', name: 'format-pre' },
     { type: 'cmd', name: '/plan' },
     { type: 'cmd', name: '/ship' },
-  ] as const as Array<import('../types.js').ModuleRef>;
+  ] as const as Array<import('../../src/types.js').ModuleRef>;
 }
 
 function v03Modules() {
@@ -144,7 +144,7 @@ function v03Modules() {
     { type: 'hook', name: 'format-post' },
     { type: 'cmd', name: '/plan' },
     { type: 'cmd', name: '/ship' },
-  ] as const as Array<import('../types.js').ModuleRef>;
+  ] as const as Array<import('../../src/types.js').ModuleRef>;
 }
 
 function v04Modules() {
@@ -159,7 +159,7 @@ function v04Modules() {
     { type: 'hook', name: 'format-post' },
     { type: 'cmd', name: '/plan' },
     { type: 'style', name: 'terse' },
-  ] as const as Array<import('../types.js').ModuleRef>;
+  ] as const as Array<import('../../src/types.js').ModuleRef>;
 }
 
 // ──────────────────────────────────────────────────────────────

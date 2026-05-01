@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Box, Text } from 'ink';
+import { basename } from 'node:path';
 import { T } from '../theme.js';
+import { useStore } from '../context.js';
 import type { ScreenName } from '../app.js';
 
 const NAV: Array<{ key: string; name: ScreenName }> = [
@@ -12,13 +14,16 @@ const NAV: Array<{ key: string; name: ScreenName }> = [
   { key: 'c', name: 'Compare' },
 ];
 
-interface Props {
-  active: ScreenName;
-}
+interface Props { active: ScreenName }
 
-// Width-locked: borderStyle="round" gives the corners and side lines.
-// Inner content padded to align like the wireframe.
+// All metadata is derived from the Store on every render. The Store does
+// no caching (pin from prompt C), so each frame reflects current state —
+// the cost is a few sub-millisecond SQLite reads, which is invisible at
+// TUI frame rates.
 export const Sidebar: React.FC<Props> = ({ active }) => {
+  const store = useStore();
+  const meta = useMemo(() => deriveMeta(store), [store]);
+
   return (
     <Box flexDirection="column" width={26} flexShrink={0} marginRight={1}>
       <Box
@@ -30,25 +35,23 @@ export const Sidebar: React.FC<Props> = ({ active }) => {
         <Text color={T.dim}>harness</Text>
         <Text>
           <Text color={T.dim}>name </Text>
-          <Text color={T.fg} bold>
-            research-bot
-          </Text>
+          <Text color={T.fg} bold>{meta.name}</Text>
         </Text>
         <Text>
           <Text color={T.dim}>brnch </Text>
-          <Text color={T.persona} bold>
-            ● main
-          </Text>
+          <Text color={T.persona} bold>● {meta.branch}</Text>
         </Text>
-        <Text>
-          <Text color={T.dim}>pin   </Text>
-          <Text backgroundColor={T.sel} color={T.selFg} bold>
-            {' v0.4 '}
+        {meta.tag !== null && (
+          <Text>
+            <Text color={T.dim}>tag   </Text>
+            <Text backgroundColor={T.sel} color={T.selFg} bold>
+              {' ' + meta.tag + ' '}
+            </Text>
           </Text>
-        </Text>
+        )}
         <Text>
           <Text color={T.dim}>code  </Text>
-          <Text color={T.fg}>a3f9c1</Text>
+          <Text color={T.fg}>{meta.code}</Text>
         </Text>
       </Box>
 
@@ -88,29 +91,43 @@ export const Sidebar: React.FC<Props> = ({ active }) => {
       >
         <Text color={T.dim}>stats</Text>
         <Text>
-          <Text color={T.dim}>snapshots  </Text>
-          <Text color={T.fg} bold>
-            42
-          </Text>
+          <Text color={T.dim}>snapshots </Text>
+          <Text color={T.fg} bold>{String(meta.snapshotCount).padStart(3)}</Text>
         </Text>
         <Text>
-          <Text color={T.dim}>branches    </Text>
-          <Text color={T.fg} bold>
-            3
-          </Text>
+          <Text color={T.dim}>branches  </Text>
+          <Text color={T.fg} bold>{String(meta.branchCount).padStart(3)}</Text>
         </Text>
         <Text>
           <Text color={T.dim}>sessions  </Text>
-          <Text color={T.fg} bold>
-            187
-          </Text>
+          <Text color={T.fg} bold>{String(meta.sessionCount).padStart(3)}</Text>
         </Text>
-      </Box>
-
-      <Box flexDirection="column" marginTop={1} paddingX={1}>
-        <Text color={T.faint}>v0.4 → working tree</Text>
-        <Text color={T.faint}>↑ 3 uncommitted edits</Text>
       </Box>
     </Box>
   );
 };
+
+interface SidebarMeta {
+  name: string;
+  branch: string;
+  tag: string | null;
+  code: string;
+  snapshotCount: number;
+  branchCount: number;
+  sessionCount: number;
+}
+
+function deriveMeta(store: ReturnType<typeof useStore>): SidebarMeta {
+  const snaps = store.snapshots();
+  const tip = snaps[0];
+  const tagged = snaps.find((s) => s.kind === 'tag' && s.version !== undefined);
+  return {
+    name: basename(store.repo.projectRoot) || 'harness',
+    branch: store.repo.currentBranchName() ?? 'main',
+    tag: tagged?.version ?? null,
+    code: tip?.codePin ?? '—',
+    snapshotCount: snaps.length,
+    branchCount: Object.keys(store.repo.branches()).length,
+    sessionCount: snaps.filter((s) => s.sessionId !== undefined).length,
+  };
+}

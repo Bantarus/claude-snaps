@@ -1,15 +1,19 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { Frame } from '../components/Frame.js';
 import { Tabs } from '../components/Tabs.js';
 import { Glyph } from '../components/Glyph.js';
+import { DeferredAction } from '../components/DeferredAction.js';
 import { T } from '../theme.js';
-import { sessions, snapshots } from '../data/mock.js';
+import { useStore } from '../context.js';
+import { useSession } from '../hooks/useSession.js';
+import { useSnapshots } from '../hooks/useSnapshots.js';
 import type { TraceKind } from '../types.js';
-import type { ScreenName } from '../app.js';
+import type { Goto } from '../app.js';
 
 interface Props {
-  goto: (s: ScreenName, payload?: unknown) => void;
+  goto: Goto;
+  sessionId?: string;
 }
 
 const TRACE_COLORS: Record<TraceKind, string> = {
@@ -25,23 +29,74 @@ function pad(s: string, w: number) {
   return s.length >= w ? s : s + ' '.repeat(w - s.length);
 }
 
-export const SessionDetail: React.FC<Props> = ({ goto }) => {
-  const [traceSel, setTraceSel] = useState(7);
-  const session = sessions[0]!;
-  const snap = snapshots.find((s) => s.id === session.snapshotId);
+function trunc(s: string, w: number) {
+  return s.length <= w ? s : s.slice(0, w - 1) + '…';
+}
+
+export const SessionDetail: React.FC<Props> = ({ goto, sessionId }) => {
+  const store = useStore();
+  const { snapshots } = useSnapshots();
+
+  // If no specific session was selected, fall back to the most recent
+  // session-bearing snapshot. Predictable starting point per pin #5.
+  const fallbackId = useMemo(() => {
+    const found = snapshots.find((s) => s.sessionId !== undefined);
+    return found?.sessionId;
+  }, [snapshots]);
+
+  const effectiveId = sessionId ?? fallbackId;
+
+  if (effectiveId === undefined) {
+    return (
+      <Frame
+        active="Sessions"
+        keys={[{ k: 'esc', l: 'back' }]}
+        right="sessions"
+      >
+        <Box paddingX={1}>
+          <Text color={T.faint}>
+            No sessions yet. Auto-snapshots from `harness-hook` will appear here
+            once Claude Code runs in this project.
+          </Text>
+        </Box>
+      </Frame>
+    );
+  }
+
+  return <SessionView goto={goto} sessionId={effectiveId} store={store} />;
+};
+
+interface ViewProps {
+  goto: Goto;
+  sessionId: string;
+  store: ReturnType<typeof useStore>;
+}
+
+const SessionView: React.FC<ViewProps> = ({ goto, sessionId, store }) => {
+  const { session, trace, traceError } = useSession(sessionId);
+  const [traceSel, setTraceSel] = useState(0);
+  const [deferred, setDeferred] = useState<string | null>(null);
+
+  const snap = useMemo(() => {
+    try {
+      return store.snapshot(session.snapshotId);
+    } catch {
+      return null;
+    }
+  }, [store, session.snapshotId]);
 
   useInput((input, key) => {
+    const len = trace?.length ?? 0;
     if (key.upArrow) setTraceSel((i) => Math.max(0, i - 1));
-    if (key.downArrow)
-      setTraceSel((i) => Math.min(session.trace.length - 1, i + 1));
+    if (key.downArrow) setTraceSel((i) => Math.min(Math.max(0, len - 1), i + 1));
     if (key.escape) goto('Lineage');
-    if (input === 'r') {
-      // re-run with this exact harness — just demo
-    }
-    if (input === 'f') {
-      // fork from this snapshot
-    }
+    if (input === 'r') setDeferred('[r] reproduce');
+    if (input === 'f') setDeferred('[f] fork');
+    if (input === 'B') setDeferred('[B] bisect');
+    if (input === 'p') setDeferred('[p] publish');
   });
+
+  const traceLoading = trace === null && traceError === null;
 
   return (
     <Frame
@@ -55,39 +110,35 @@ export const SessionDetail: React.FC<Props> = ({ goto }) => {
         { k: 'p', l: 'publish' },
         { k: 'esc', l: 'back' },
       ]}
-      right={`trace ${traceSel + 1}/${session.trace.length}`}
+      right={
+        traceLoading
+          ? 'loading trace…'
+          : trace !== null && trace.length > 0
+            ? `trace ${traceSel + 1}/${trace.length}`
+            : 'trace 0/0'
+      }
     >
       <Box>
         <Text>
-          <Text color={T.dim}>research-bot ❯ sessions ❯ </Text>
-          <Text color={T.fg} bold>
-            {snap?.id} · {session.message}
-          </Text>
-          <Text color={T.dim}>{'   '}</Text>
-          <Text color={T.dim}>
-            {session.startLabel} · {session.durationLabel} ·{' '}
-          </Text>
-          <Text color={T.persona} bold>
-            ✓ ended
-          </Text>
+          <Text color={T.dim}>harness ❯ sessions ❯ </Text>
+          <Text color={T.fg} bold>{snap?.id ?? session.snapshotId} · {session.message}</Text>
+          <Text color={T.dim}>{'   '}{session.startLabel}</Text>
         </Text>
       </Box>
 
       <Box marginTop={1}>
         <Text>
-          <Text backgroundColor={T.hook} color={T.selFg} bold>
-            {' '}
-            harness {snap?.version}{' '}
-          </Text>
+          {snap?.version !== undefined && (
+            <Text backgroundColor={T.hook} color={T.selFg} bold>
+              {' '}harness {snap.version}{' '}
+            </Text>
+          )}
           <Text>{'  '}</Text>
           <Text color={T.faint}>code </Text>
-          <Text color={T.fg}>{snap?.codePin}</Text>
+          <Text color={T.fg}>{snap?.codePin ?? '—'}</Text>
           <Text>{'  '}</Text>
-          <Text color={T.faint}>pr   </Text>
-          <Text color={T.fg}>{session.pr}</Text>
-          <Text>{'  '}</Text>
-          <Text color={T.faint}>by   </Text>
-          <Text color={T.fg}>{session.author}</Text>
+          <Text color={T.faint}>session </Text>
+          <Text color={T.fg}>{session.id.slice(0, 8)}</Text>
         </Text>
       </Box>
 
@@ -97,7 +148,6 @@ export const SessionDetail: React.FC<Props> = ({ goto }) => {
       />
 
       <Box flexDirection="row" marginTop={1} gap={1} flexGrow={1}>
-        {/* TRACE PANE */}
         <Box
           flexDirection="column"
           borderStyle="round"
@@ -107,14 +157,22 @@ export const SessionDetail: React.FC<Props> = ({ goto }) => {
           flexShrink={1}
         >
           <Text color={T.dim}>trace</Text>
-          {session.trace.map((row, i) => {
+          {traceLoading && <Text color={T.faint}>loading trace…</Text>}
+          {traceError !== null && (
+            <Text color={T.rm}>error: {trunc(traceError.message, 50)}</Text>
+          )}
+          {trace !== null && trace.length === 0 && (
+            <Text color={T.faint}>
+              (no trace recorded — JSONL not found at the expected path,
+              or this session pre-dates the harness hook)
+            </Text>
+          )}
+          {trace !== null && trace.map((row, i) => {
             const isSel = i === traceSel;
             return (
               <Text key={i}>
                 {isSel ? (
-                  <Text color={T.sel} bold>
-                    ❯
-                  </Text>
+                  <Text color={T.sel} bold>❯</Text>
                 ) : (
                   <Text color={T.dim}>│</Text>
                 )}
@@ -122,13 +180,12 @@ export const SessionDetail: React.FC<Props> = ({ goto }) => {
                 <Text color={TRACE_COLORS[row.kind]} bold>
                   {pad(row.kind, 8)}
                 </Text>
-                <Text color={T.fg}>{row.message}</Text>
+                <Text color={T.fg}>{trunc(row.message, 60)}</Text>
               </Text>
             );
           })}
         </Box>
 
-        {/* SNAPSHOT PANE */}
         <Box
           flexDirection="column"
           borderStyle="round"
@@ -139,17 +196,15 @@ export const SessionDetail: React.FC<Props> = ({ goto }) => {
         >
           <Text>
             <Text color={T.dim}>harness snapshot · </Text>
-            <Text color={T.fg} bold>
-              {snap?.id}
-            </Text>
+            <Text color={T.fg} bold>{snap?.id ?? '—'}</Text>
           </Text>
           {snap?.modules.map((m, i) => (
             <Text key={i}>
-              <Text color={T.faint}>{pad(m.type, 9)}</Text>
+              <Text color={T.faint}>{pad(m.type, 11)}</Text>
               <Glyph type={m.type} />
               <Text> </Text>
               <Text color={T.fg}>{m.name}</Text>
-              {m.version && (
+              {m.version !== undefined && (
                 <>
                   <Text> </Text>
                   <Text color={T.dim}>{m.version}</Text>
@@ -157,32 +212,10 @@ export const SessionDetail: React.FC<Props> = ({ goto }) => {
               )}
             </Text>
           ))}
-          <Text> </Text>
-          <Text color={T.faint}>drift from current (v0.5-draft):</Text>
-          <Text>
-            <Text color={T.add} bold>
-              +{' '}
-            </Text>
-            <Text color={T.fg}>vector-store MCP added later</Text>
-          </Text>
-          <Text>
-            <Text color={T.add} bold>
-              +{' '}
-            </Text>
-            <Text color={T.fg}>code-review skill added later</Text>
-          </Text>
-          <Text>
-            <Text color={T.chg} bold>
-              ~{' '}
-            </Text>
-            <Text color={T.fg}>terse style updated</Text>
-          </Text>
-          <Text> </Text>
-          <Text backgroundColor={T.persona} color={T.selFg} bold>
-            {' [r] re-run with this exact harness '}
-          </Text>
         </Box>
       </Box>
+
+      {deferred !== null && <DeferredAction key={deferred + '-' + Date.now()} label={deferred} />}
     </Frame>
   );
 };

@@ -4,8 +4,15 @@
     "jsx": "react-jsx",
     "allowSyntheticDefaultImports": true,
     "noEmit": true,
-    "exactOptionalPropertyTypes": false,
-    "verbatimModuleSyntax": false
+
+    // Ink's <Text backgroundColor> prop is typed as plain `string` rather
+    // than `string | undefined`, so a conditional expression that might
+    // resolve to undefined is rejected under exactOptionalPropertyTypes.
+    // Refactoring every call site to spread-only-when-defined is busywork
+    // that doesn't change runtime behavior — the screens still render
+    // identically. Workspace default for the rest of the rules; this one
+    // override is the cost of consuming Ink's typings unchanged.
+    "exactOptionalPropertyTypes": false
   },
-  "include": ["src/**/*", "scripts/**/*"]
+  "include": ["src/**/*", "test/**/*"]
 }
