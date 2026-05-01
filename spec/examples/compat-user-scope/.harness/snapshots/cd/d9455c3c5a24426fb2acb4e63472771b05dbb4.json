@@ -1,0 +1,57 @@
+{
+  "apmLockHash": null,
+  "branch": "main",
+  "codePin": null,
+  "createdAt": "2026-04-06T00:00:00.000Z",
+  "formatVersion": "0.1",
+  "id": "cdd9455c3c5a24426fb2acb4e63472771b05dbb4",
+  "kind": "init",
+  "message": "user-scope fixture: project + $HOME modules",
+  "modules": [
+    {
+      "enabled": true,
+      "name": "senior-eng",
+      "source": {
+        "kind": "local",
+        "path": ".claude/agents/senior-eng.md"
+      },
+      "type": "chatmode"
+    },
+    {
+      "enabled": true,
+      "name": "research",
+      "source": {
+        "kind": "user",
+        "path": ".claude/skills/research/SKILL.md"
+      },
+      "type": "skill",
+      "version": "v0.5"
+    },
+    {
+      "enabled": true,
+      "name": "SessionStart#0",
+      "source": {
+        "kind": "user",
+        "path": ".claude/settings.json"
+      },
+      "type": "hook"
+    },
+    {
+      "enabled": true,
+      "name": "Read",
+      "source": {
+        "kind": "builtin"
+      },
+      "type": "mcp"
+    },
+    {
+      "enabled": true,
+      "name": "Bash",
+      "source": {
+        "kind": "builtin"
+      },
+      "type": "mcp"
+    }
+  ],
+  "parentIds": []
+}

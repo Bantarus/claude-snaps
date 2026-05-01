@@ -14,7 +14,9 @@ coverage/
 .pnpm-store/
 
 # .harness/ — default policy is "private" (spec/format.md §7.1):
-# everything is local-only; nothing is committed. When dogfooding switches
+# everything is local-only; nothing is committed. Anchored to the repo
+# root so the pattern doesn't shadow spec/examples/*/.harness/, which
+# are spec source-of-truth and MUST be tracked. When dogfooding switches
 # to a "shared-snapshots" policy, narrow this to: .harness/lineage.sqlite,
 # .harness/transcripts/, .harness/hooks/.
-.harness/
+/.harness/

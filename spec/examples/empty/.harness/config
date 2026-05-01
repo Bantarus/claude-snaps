@@ -1,0 +1,18 @@
+# .harness/config — TOML. See spec/format.md §7.
+
+[core]
+default_branch = "main"
+format_version = "0.1"
+
+[capture]
+auto_snapshot_on_session = true
+scope = "project"
+include_transcripts = false
+mask_paths = []
+
+[apm]
+detect_lockfile = true
+lockfile_path = "apm.lock.yaml"
+
+[gitignore]
+policy = "private"
