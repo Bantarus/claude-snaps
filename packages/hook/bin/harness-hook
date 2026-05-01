@@ -1,0 +1,9 @@
+#!/usr/bin/env -S node --no-warnings=ExperimentalWarning
+import('../dist/main.js').then(
+  (m) => m.run(process.argv.slice(2)),
+  (err) => {
+    // Even loader failure must not block the host. Log + exit zero.
+    process.stderr.write(`harness-hook: error: failed to load: ${err && err.message ? err.message : err}\n`);
+    process.exit(0);
+  },
+);

@@ -1,0 +1,18 @@
+# apm.lock.yaml — team-shared example. apm-sample-package depends on
+# common-utilities (depth 2).
+lockfile_version: 1
+packages:
+  - package: microsoft/apm-sample-package
+    repo_url: https://github.com/microsoft/apm-sample-package
+    resolved_commit: a3f9c1ef2244c3e85d10b0a6b7d52f0911aabbcc
+    depth: 1
+    deployed_files:
+      - .claude/skills/research/SKILL.md
+      - .claude/skills/code-review/SKILL.md
+  - package: microsoft/common-utilities
+    repo_url: https://github.com/microsoft/common-utilities
+    resolved_commit: bb22cc33dd44ee55ff66778899aabbccddeeff00
+    depth: 2
+    resolved_by: microsoft/apm-sample-package
+    deployed_files:
+      - .claude/skills/summarize/SKILL.md

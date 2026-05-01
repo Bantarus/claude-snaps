@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harness.dev/schema/snapshot.schema.json",
+  "title": "Harness snapshot blob",
+  "description": "A single immutable record of an agent harness composition, stored at .harness/snapshots/<aa>/<rest>.json where <aa><rest> = id. Defined by format.md §2.",
+  "type": "object",
+  "required": [
+    "id",
+    "parentIds",
+    "branch",
+    "kind",
+    "message",
+    "codePin",
+    "createdAt",
+    "modules"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "formatVersion": {
+      "type": "string",
+      "description": "Optional; defaults to \"0.1\" if absent. Major version mismatch is a hard error per format.md §9.",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "default": "0.1"
+    },
+    "id": {
+      "type": "string",
+      "description": "40-char lowercase hex content-addressable hash. Derivation: format.md §3.",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "parentIds": {
+      "type": "array",
+      "description": "Length 0 = init (kind MUST be 'init'); 1 = normal; 2 = merge (reserved, not produced in v0.1).",
+      "items": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+      "minItems": 0,
+      "maxItems": 2
+    },
+    "branch": {
+      "type": "string",
+      "description": "Branch name. Same allowed character set as a git ref (slashes permitted).",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9._/-]+$"
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["init", "edit", "auto", "fork", "tag"]
+    },
+    "message": {
+      "type": "string",
+      "description": "Human-readable one-line summary. Multi-line MAY be permitted by writers; readers MUST handle either.",
+      "minLength": 1
+    },
+    "version": {
+      "type": ["string", "null"],
+      "description": "Promotion label. REQUIRED on kind='tag'. SHOULD be null on other kinds; if non-null, names a version inherited from a tag earlier in the lineage."
+    },
+    "codePin": {
+      "type": ["string", "null"],
+      "description": "Git sha at snapshot time, or null if the project is not a git repository.",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "createdAt": {
+      "type": "string",
+      "description": "ISO 8601 UTC, millisecond precision. MUST end in 'Z'.",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "sessionId": {
+      "type": ["string", "null"],
+      "description": "Present on kind='auto' (the SessionStart hook writes this). Null/absent otherwise."
+    },
+    "model": {
+      "type": ["string", "null"],
+      "description": "Model id reported by the host on SessionStart (e.g. 'claude-opus-4-7'). Optional; absent on snapshots written before the host shipped a model field, or by non-hook writers."
+    },
+    "permissionMode": {
+      "type": ["string", "null"],
+      "description": "Permission mode reported by the host on SessionStart (e.g. 'default', 'plan', 'acceptEdits'). Optional; absent on snapshots written before the host shipped a permission_mode field, or by non-hook writers."
+    },
+    "author": {
+      "type": ["string", "null"]
+    },
+    "apmLockHash": {
+      "type": ["string", "null"],
+      "description": "sha256 of apm.lock.yaml bytes at snapshot time, prefixed 'sha256:'. Null when no lockfile present. See apm-integration.md.",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "modules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Module" }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "init" } }, "required": ["kind"] },
+      "then": { "properties": { "parentIds": { "maxItems": 0 } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "tag" } }, "required": ["kind"] },
+      "then": { "required": ["version"], "properties": { "version": { "type": "string" } } }
+    }
+  ],
+  "$defs": {
+    "Module": {
+      "type": "object",
+      "required": ["type", "name", "source"],
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Canonical type per format.md §2.2. Writers MUST emit one of: chatmode, instruction, prompt, skill, agent, hook, mcp, style. Readers MUST accept legacy aliases (persona→chatmode, cmd|command→prompt, subagent→agent, tool|server→mcp).",
+          "enum": [
+            "chatmode",
+            "instruction",
+            "prompt",
+            "skill",
+            "agent",
+            "hook",
+            "mcp",
+            "style"
+          ]
+        },
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": ["string", "null"] },
+        "enabled": { "type": "boolean", "default": true },
+        "configHash": {
+          "type": ["string", "null"],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "source": { "$ref": "#/$defs/ModuleSource" }
+      }
+    },
+    "ModuleSource": {
+      "description": "Discriminated union on `kind`. Writers MUST emit one of apm|local|builtin. Readers MUST preserve unknown kinds verbatim on round-trip (forward-compat per format.md §9). Private experiments use `x-`-prefixed kinds — these validate as opaque objects with arbitrary additional properties.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "package", "resolvedCommit", "depth"],
+          "additionalProperties": true,
+          "properties": {
+            "kind": { "const": "apm" },
+            "package": { "type": "string", "minLength": 1 },
+            "resolvedCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+            "depth": { "type": "integer", "minimum": 1 },
+            "resolvedBy": { "type": ["string", "null"] }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "path"],
+          "additionalProperties": true,
+          "properties": {
+            "kind": { "const": "local" },
+            "path": {
+              "type": "string",
+              "description": "Repo-relative POSIX path (forward slashes, no leading '/').",
+              "pattern": "^[^/].*$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "additionalProperties": true,
+          "properties": {
+            "kind": { "const": "builtin" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "additionalProperties": true,
+          "description": "Forward-compat extension: any `kind` matching `^x-`. The validator does not constrain payload shape; readers preserve verbatim and treat as opaque.",
+          "properties": {
+            "kind": { "type": "string", "pattern": "^x-[A-Za-z0-9._-]+$" }
+          }
+        }
+      ]
+    }
+  }
+}

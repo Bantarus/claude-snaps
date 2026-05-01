@@ -1,0 +1,16 @@
+# apm.lock.yaml — illustrative; resolved versions pinned to commits.
+lockfile_version: 1
+packages:
+  - package: microsoft/research-skills
+    repo_url: https://github.com/microsoft/research-skills
+    resolved_commit: 4d2e1aa00ff34b9b1cdef0a1b2c3d4e5f6a7b8c9
+    depth: 1
+    deployed_files:
+      - .claude/skills/research/SKILL.md
+      - .claude/skills/summarize/SKILL.md
+  - package: microsoft/senior-eng
+    repo_url: https://github.com/microsoft/senior-eng
+    resolved_commit: 88aa11bb22cc33dd44ee55ff66001122334455aa
+    depth: 1
+    deployed_files:
+      - .claude/agents/senior-eng.md

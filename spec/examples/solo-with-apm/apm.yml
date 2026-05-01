@@ -1,0 +1,9 @@
+# apm.yml — Microsoft APM manifest (illustrative).
+name: solo-research-bot
+primitives:
+  - kind: skill
+    package: microsoft/research-skills
+    version: ^0.5
+  - kind: chatmode
+    package: microsoft/senior-eng
+    version: ^1.0

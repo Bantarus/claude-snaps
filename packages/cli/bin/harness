@@ -1,0 +1,13 @@
+#!/usr/bin/env -S node --no-warnings=ExperimentalWarning
+// `env -S` splits the line on whitespace; required for the flag to reach
+// node. POSIX coreutils ≥ 8.30 supports it (Linux, macOS Catalina+, BSD).
+// The flag is needed because @harness/core uses node:sqlite, which is
+// Stability 1 in Node 22-24 and emits an ExperimentalWarning at module
+// load. We accept the API-evolution risk via engines.node = ">=24.0".
+import('../dist/main.js').then(
+  (m) => m.run(process.argv.slice(2)),
+  (err) => {
+    process.stderr.write(`harness: failed to load CLI: ${err && err.message ? err.message : err}\n`);
+    process.exit(2);
+  },
+);

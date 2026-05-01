@@ -1,0 +1,20 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`diff — example fixtures > solo-no-apm: snapshot the exact diff (regression guard) 1`] = `
+[
+  {
+    "after": {
+      "enabled": true,
+      "name": "format-post",
+      "source": {
+        "kind": "local",
+        "path": ".claude/settings.json",
+      },
+      "type": "hook",
+    },
+    "kind": "add",
+    "moduleType": "hook",
+    "name": "format-post",
+  },
+]
+`;

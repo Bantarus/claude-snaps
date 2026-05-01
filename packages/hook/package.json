@@ -1,0 +1,27 @@
+{
+  "name": "@harness/hook",
+  "version": "0.1.0",
+  "private": true,
+  "description": "harness-hook — the SessionStart hook binary that auto-snapshots into .harness/.",
+  "type": "module",
+  "main": "./dist/main.js",
+  "bin": {
+    "harness-hook": "./bin/harness-hook"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@harness/core": "workspace:*"
+  },
+  "engines": {
+    "node": ">=24.0"
+  }
+}

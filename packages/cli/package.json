@@ -1,0 +1,27 @@
+{
+  "name": "@harness/cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The harness command-line interface — init, log, diff, tag, branch, checkout, reindex, install-hook.",
+  "type": "module",
+  "main": "./dist/main.js",
+  "bin": {
+    "harness": "./bin/harness"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@harness/core": "workspace:*"
+  },
+  "engines": {
+    "node": ">=24.0"
+  }
+}

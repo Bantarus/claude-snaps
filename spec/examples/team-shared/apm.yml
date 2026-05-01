@@ -1,0 +1,6 @@
+# apm.yml — team manifest with one direct dep that pulls a transitive.
+name: team-research
+primitives:
+  - kind: skill
+    package: microsoft/apm-sample-package
+    version: ^1.6

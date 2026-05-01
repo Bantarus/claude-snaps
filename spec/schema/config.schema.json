@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harness.dev/schema/config.schema.json",
+  "title": "Harness config",
+  "description": "Logical schema for the TOML at .harness/config. Defined by format.md §7. This schema describes the TOML once parsed into JSON; it is not a TOML grammar.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["core"],
+  "properties": {
+    "core": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default_branch", "format_version"],
+      "properties": {
+        "default_branch": {
+          "type": "string",
+          "description": "Branch checked out by `harness init`.",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._/-]+$",
+          "default": "main"
+        },
+        "format_version": {
+          "type": "string",
+          "description": "Mirrors format.md version. Used to choose migration paths.",
+          "pattern": "^[0-9]+\\.[0-9]+$",
+          "default": "0.1"
+        }
+      }
+    },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "auto_snapshot_on_session": {
+          "type": "boolean",
+          "description": "Whether the SessionStart hook auto-snapshots. See hooks.md.",
+          "default": true
+        },
+        "include_transcripts": {
+          "type": "boolean",
+          "description": "When true, the hook copies session JSONL into .harness/transcripts/.",
+          "default": false
+        },
+        "mask_paths": {
+          "type": "array",
+          "description": "Glob patterns whose matches are redacted from `source.path` in local-source modules. Matching is repo-relative POSIX globbing.",
+          "items": { "type": "string" },
+          "default": []
+        }
+      }
+    },
+    "apm": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "detect_lockfile": {
+          "type": "boolean",
+          "description": "Disable APM integration when false. See apm-integration.md.",
+          "default": true
+        },
+        "lockfile_path": {
+          "type": "string",
+          "description": "Repo-relative path to the APM lockfile.",
+          "default": "apm.lock.yaml"
+        }
+      }
+    },
+    "gitignore": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "policy": {
+          "type": "string",
+          "enum": ["private", "shared-snapshots", "shared-everything"],
+          "description": "Three-level policy for what under .harness/ is committed. See format.md §7.",
+          "default": "private"
+        }
+      }
+    }
+  }
+}
