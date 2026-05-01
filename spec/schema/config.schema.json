@@ -36,6 +36,12 @@
           "description": "Whether the SessionStart hook auto-snapshots. See hooks.md.",
           "default": true
         },
+        "scope": {
+          "type": "string",
+          "enum": ["project", "user"],
+          "description": "Capture scope per format.md §1.1. 'project' walks <projectRoot>/.claude/ only. 'user' also walks $HOME/.claude/, emitting source.kind=user for those modules.",
+          "default": "project"
+        },
         "include_transcripts": {
           "type": "boolean",
           "description": "When true, the hook copies session JSONL into .harness/transcripts/.",

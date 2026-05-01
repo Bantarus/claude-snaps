@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { cpSync, mkdtempSync } from 'node:fs';
+import { cpSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -94,6 +94,68 @@ describe('Repo on team-shared example', () => {
       const exp = repo.branchTip('experimental');
       const lcaId = repo.lca(main, exp);
       expect(lcaId).toBe('e6e76866ce636119129509a831acab5a2f70b2b5'); // v0.4 tag
+    } finally {
+      repo.close();
+    }
+  });
+});
+
+describe('Repo.config — [capture].scope reader (spec/format.md §1.1)', () => {
+  test('default-init repo has captureScope === "project"', () => {
+    const proj = mkdtempSync(join(tmpdir(), 'harness-config-default-'));
+    const repo = Repo.init(proj);
+    try {
+      expect(repo.config.captureScope).toBe('project');
+    } finally {
+      repo.close();
+    }
+  });
+
+  test('config with scope = "user" is read back as "user"', () => {
+    const proj = mkdtempSync(join(tmpdir(), 'harness-config-user-'));
+    Repo.init(proj).close();
+    // Overwrite the config file with scope = "user".
+    writeFileSync(
+      join(proj, '.harness/config'),
+      '[core]\ndefault_branch = "main"\nformat_version = "0.1"\n\n' +
+      '[capture]\nauto_snapshot_on_session = true\nscope = "user"\n',
+      'utf-8',
+    );
+    const repo = Repo.open(proj);
+    try {
+      expect(repo.config.captureScope).toBe('user');
+    } finally {
+      repo.close();
+    }
+  });
+
+  test('unknown scope value falls back to "project" (defensive default)', () => {
+    const proj = mkdtempSync(join(tmpdir(), 'harness-config-bad-'));
+    Repo.init(proj).close();
+    writeFileSync(
+      join(proj, '.harness/config'),
+      '[capture]\nscope = "team"\n',
+      'utf-8',
+    );
+    const repo = Repo.open(proj);
+    try {
+      expect(repo.config.captureScope).toBe('project');
+    } finally {
+      repo.close();
+    }
+  });
+
+  test('scope key in a non-capture section is ignored', () => {
+    const proj = mkdtempSync(join(tmpdir(), 'harness-config-misplaced-'));
+    Repo.init(proj).close();
+    writeFileSync(
+      join(proj, '.harness/config'),
+      '[core]\nscope = "user"\n[capture]\n',
+      'utf-8',
+    );
+    const repo = Repo.open(proj);
+    try {
+      expect(repo.config.captureScope).toBe('project');
     } finally {
       repo.close();
     }

@@ -97,7 +97,7 @@ CREATE TABLE snapshot_modules (
   -- mis-charactered (`x-foo!bar`, `x-foo bar`) extensions, keeping the
   -- SQL CHECK and JSON Schema in lockstep.
   source_kind            TEXT NOT NULL CHECK (
-    source_kind IN ('apm','local','builtin')
+    source_kind IN ('apm','local','user','builtin')
     OR (
       source_kind LIKE 'x-_%'
       AND source_kind NOT GLOB '*[^A-Za-z0-9._-]*'

@@ -91,6 +91,15 @@ def m_local(t, name, path, version=None, enabled=True, config_hash=None):
     return out
 
 
+def m_user(t, name, path, version=None, enabled=True, config_hash=None):
+    """User-level module per spec/format.md §2.6 — path is $HOME-relative."""
+    out = {"type": t, "name": name, "enabled": enabled,
+           "source": {"kind": "user", "path": path}}
+    if version is not None: out["version"] = version
+    if config_hash is not None: out["configHash"] = config_hash
+    return out
+
+
 def m_apm(t, name, package, commit, depth=1, version=None, enabled=True,
           resolved_by=None, config_hash=None):
     src = {"kind": "apm", "package": package, "resolvedCommit": commit, "depth": depth}
@@ -118,6 +127,7 @@ format_version = "0.1"
 
 [capture]
 auto_snapshot_on_session = true
+scope = "project"
 include_transcripts = false
 mask_paths = []
 
@@ -128,6 +138,11 @@ lockfile_path = "apm.lock.yaml"
 [gitignore]
 policy = "private"
 """
+
+CONFIG_USER_SCOPE = CONFIG_DEFAULT.replace(
+    'scope = "project"',
+    'scope = "user"',
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -744,6 +759,73 @@ def build_compat_session_ctx():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Example: compat-user-scope/  — exercises the `user` source kind emitted
+# only when [capture].scope = "user" (spec/format.md §1.1, §2.6). All
+# other examples exercise the default project scope; this one exercises
+# the opt-in user scope where some modules carry kind="user" with paths
+# relative to $HOME.
+# ─────────────────────────────────────────────────────────────────────────────
+
+USER_SCOPE_README = """\
+# compat-user-scope — `[capture].scope = "user"` round-trip
+
+A reader MUST handle the `user` source kind per format.md §2.6. This
+fixture's snapshot includes a mix of project-level (`kind: "local"`)
+and user-level (`kind: "user"`) modules — the shape produced when a
+SessionStart hook runs against a project whose config has flipped
+scope from the default `"project"` to `"user"`.
+
+| Module | source.kind | path |
+|---|---|---|
+| chatmode `senior-eng`        | local | `.claude/agents/senior-eng.md` |
+| skill    `research`          | user  | `.claude/skills/research/SKILL.md` (relative to $HOME) |
+| hook     `SessionStart#0`    | user  | `.claude/settings.json` (relative to $HOME) |
+| mcp      `Read`              | builtin | — |
+
+Cross-machine consumers (team-sync, public diffs) SHOULD filter
+`kind: "user"` modules per format.md §9.2 — they are not portable.
+The blob still records them so a return to the writer's machine
+reproduces the full composition; the filter is rendering-side, not
+storage-side.
+"""
+
+
+def build_compat_user_scope():
+    proj = EXAMPLES / "compat-user-scope"
+    h = proj / ".harness"
+    if h.exists():
+        shutil.rmtree(h)
+    (h / "snapshots").mkdir(parents=True)
+    (h / "refs" / "heads").mkdir(parents=True)
+
+    modules = [
+        m_local("chatmode", "senior-eng", ".claude/agents/senior-eng.md"),
+        m_user("skill", "research", ".claude/skills/research/SKILL.md", version="v0.5"),
+        m_user("hook", "SessionStart#0", ".claude/settings.json"),
+        m_builtin("mcp", "Read"),
+        m_builtin("mcp", "Bash"),
+    ]
+
+    s_init = {
+        "formatVersion": "0.1",
+        "parentIds": [],
+        "branch": "main",
+        "kind": "init",
+        "message": "user-scope fixture: project + $HOME modules",
+        "codePin": None,
+        "createdAt": "2026-04-06T00:00:00.000Z",
+        "apmLockHash": None,
+        "modules": modules,
+    }
+    id_init = write_snapshot(h, s_init)
+
+    write_text(h / "HEAD", "ref: refs/heads/main\n")
+    write_text(h / "refs" / "heads" / "main", id_init + "\n")
+    write_text(h / "config", CONFIG_USER_SCOPE)
+    write_text(proj / "READER-COMPAT.md", USER_SCOPE_README)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # The canonical-id test vector (used in spec/format.md §3)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -802,5 +884,6 @@ if __name__ == "__main__":
     build_team_shared()
     build_compat_fixtures()
     build_compat_session_ctx()
+    build_compat_user_scope()
     print("Built example harness directories under spec/examples/.")
     emit_test_vector_summary()

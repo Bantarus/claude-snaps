@@ -129,7 +129,7 @@
       }
     },
     "ModuleSource": {
-      "description": "Discriminated union on `kind`. Writers MUST emit one of apm|local|builtin. Readers MUST preserve unknown kinds verbatim on round-trip (forward-compat per format.md §9). Private experiments use `x-`-prefixed kinds — these validate as opaque objects with arbitrary additional properties.",
+      "description": "Discriminated union on `kind`. Writers MUST emit one of apm|local|user|builtin. Readers MUST preserve unknown kinds verbatim on round-trip (forward-compat per format.md §9). Private experiments use `x-`-prefixed kinds — these validate as opaque objects with arbitrary additional properties.",
       "oneOf": [
         {
           "type": "object",
@@ -152,6 +152,19 @@
             "path": {
               "type": "string",
               "description": "Repo-relative POSIX path (forward slashes, no leading '/').",
+              "pattern": "^[^/].*$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "path"],
+          "additionalProperties": true,
+          "properties": {
+            "kind": { "const": "user" },
+            "path": {
+              "type": "string",
+              "description": "$HOME-relative POSIX path (forward slashes, no leading '/'). Per format.md §2.6 only emitted when [capture].scope = 'user'.",
               "pattern": "^[^/].*$"
             }
           }
