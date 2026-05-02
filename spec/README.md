@@ -18,13 +18,14 @@ codebase.
 
 | | |
 |---|---|
-| Version | **0.1** Working Draft |
+| Version | **0.2.0** Working Draft |
 | Stability | **Unstable.** May change without notice until v1.0. |
 | License | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Conformance | [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119) MUST / SHOULD / MAY |
-| What's locked | Filesystem layout (§1), required snapshot fields (§2.1), id derivation (§3), DAG/refs/HEAD semantics (§4), SQL schema v1, type vocabulary aliases. |
-| What may still move | Float canonicalization tightening, the `_meta` table fields, masked-path glob semantics, `kind: "tag"` annotations. |
-| Out of scope for v0.1 | Local-source content storage, multi-machine sync semantics, annotated tags, reflog, merge-kind snapshots (parent length 2 is reserved but not produced). |
+| What's locked | Filesystem layout (§1), required snapshot fields (§2.1), the `init`/`manual`/`tag` kind vocabulary (§2.2), attribution events (§2.7), id derivation (§3), DAG/refs/HEAD semantics (§4), SQL schema v2, type vocabulary aliases. |
+| What may still move | Float canonicalization tightening, the `_meta` table fields, masked-path glob semantics, `kind: "tag"` annotations, the `attributions.event_kind` enum (additions only via spec amendment). |
+| Out of scope for v0.2 | Local-source content storage, multi-machine sync semantics, annotated tags, reflog, merge-kind snapshots (parent length 2 is reserved but not produced), additional hook events (`PreCompact`, `SessionEnd`, `ConfigChange`), user-level capture (`~/.claude/`). |
+| Migration from v0.1.x | Run `harness migrate`. Idempotent; deduplicates compositions that became byte-identical after `sessionId` removal. See [format.md §9.5](format.md#95-migration-from-v01x--v020). |
 
 ## Reading order
 
@@ -35,8 +36,9 @@ For someone implementing a reader from scratch, ~30 minutes end-to-end:
    index contract, config TOML, versioning rules.
 2. **[apm-integration.md](apm-integration.md)** — how APM's `apm.lock.yaml`
    enriches snapshots, the `apmLockHash` field, the reproduction contract.
-3. **[hooks.md](hooks.md)** — the SessionStart hook's CLI interface, what
-   it captures, the atomic write protocol, concurrency rules.
+3. **[hooks.md](hooks.md)** — the hook contract for `SessionStart` and
+   `UserPromptSubmit`, what it captures, the atomic write protocol,
+   the hot-path optimization, concurrency rules.
 4. **[schema/001_init.sql](schema/001_init.sql)** — the canonical SQLite
    schema. Read top-to-bottom; comments explain the design.
 5. **[schema/snapshot.schema.json](schema/snapshot.schema.json)** — JSON

@@ -1,15 +1,26 @@
-# `.harness/` — SessionStart hook contract
+# `.harness/` — Hook contract (SessionStart, UserPromptSubmit)
 
-> **Status:** Working Draft v0.1.
+> **Status:** Working Draft v0.2.0.
 > **Conformance terminology:** [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119) (MUST / SHOULD / MAY).
 > **Companion to:** [format.md](format.md), [apm-integration.md](apm-integration.md).
 
-This document specifies the contract between an agent runtime that fires a
-**SessionStart** event and a hook executable that records an `auto`-kind
-snapshot to `.harness/`. The hook is the most common entry point for
-populating `.harness/`; the rest of this document is written from its
-perspective. Other writers (CLI commands, IDE integrations) follow the
-same data contract but may diverge on argument forms.
+This document specifies the contract between an agent runtime that fires
+hook events and a hook executable that records the harness composition
+into `.harness/`. In v0.2.0 the hook MUST handle two events:
+
+- **`SessionStart`** — fired once per fresh session. Records a
+  `session_start` attribution event ([format.md §2.7](format.md#27-attribution-events)).
+- **`UserPromptSubmit`** — fired on every user prompt within a session,
+  including the first prompt of a resumed session. Records a
+  `user_prompt` attribution event.
+
+On each fire, the hook either appends an attribution event to an
+existing snapshot (when composition is unchanged since the previous
+fire) or writes a new `manual`-kind snapshot blob plus an attribution
+event (when composition changed). The hook is the most common entry
+point for populating `.harness/`; the rest of this document is written
+from its perspective. Other writers (CLI commands, IDE integrations)
+follow the same data contract but may diverge on argument forms.
 
 ## 1. Invocation interface
 
@@ -28,9 +39,9 @@ parse the result as JSON. The schema:
 {
   "session_id":       "<string, required>",
   "cwd":              "<absolute path, required>",
-  "hook_event_name":  "SessionStart",
+  "hook_event_name":  "SessionStart | UserPromptSubmit",
   "transcript_path":  "<absolute path to session JSONL, optional>",
-  "source":           "startup | resume | clear | compact",
+  "source":           "startup | resume | clear | compact (SessionStart only)",
   "model":            "<model id, optional>",
   "permission_mode":  "<default | plan | acceptEdits | bypassPermissions, optional>",
   "agent_type":       "<string, only when --agent <name> was used>"
@@ -38,14 +49,25 @@ parse the result as JSON. The schema:
 ```
 
 Field names are **snake_case** (Claude Code's convention). Conforming
-hosts SHOULD pass at least `session_id` and `cwd`. The hook MUST capture
-`model` and `permission_mode` when present and write them through to the
-snapshot blob's `model` / `permissionMode` fields verbatim (see
+hosts SHOULD pass at least `session_id`, `cwd`, and `hook_event_name`.
+The hook MUST distinguish events via `hook_event_name`:
+
+- `"SessionStart"` → append a `session_start` attribution; copy
+  `source` (the `startup` / `resume` / `clear` / `compact` value)
+  through to the attribution row.
+- `"UserPromptSubmit"` → append a `user_prompt` attribution; the
+  `source` field is ignored even if present.
+
+The hook MUST capture `model` and `permission_mode` when present and
+write them through to any newly-written snapshot blob's `model` /
+`permissionMode` fields verbatim (see
 [format.md §2.1](format.md#21-required-and-optional-fields)) — both are
 session-level context that materially changes what `harness diff` can
 explain about behavioral drift between snapshots, and they cannot be
-backfilled because snapshots are immutable. Other unknown fields are
-observed-and-ignored in v0.1.
+backfilled because snapshots are immutable. When the hot-path
+optimization (§2.4) skips writing a new snapshot, `model` and
+`permission_mode` are not re-applied to the existing snapshot. Other
+unknown fields are observed-and-ignored in v0.2.
 
 ### 1.2 Channel B — CLI flags (secondary, testing)
 
@@ -94,16 +116,28 @@ The hook MUST be safe to invoke with an empty environment beyond `PATH`,
 
 ## 2. What the hook captures
 
-On a successful run, the hook MUST produce **exactly one** snapshot blob
-under `.harness/snapshots/` and MUST update `.harness/lineage.sqlite`
-to reflect it (and any newly-observed sessions/usage). The blob's
-`kind` MUST be `"auto"` (or `"init"` if `HEAD` resolves to no commit yet,
-i.e. the very first snapshot of an empty repo per
-[format.md §4.4](format.md#44-the-empty-repository)), `sessionId` MUST
-be set to the value resolved from [§1.4](#14-merge-and-validation),
-and `parentIds` MUST contain exactly one id — the current `HEAD`
-resolved to a snapshot id — except on the empty-repo first snapshot,
-where `parentIds` MUST be empty.
+On a successful run, the hook MUST update `.harness/lineage.sqlite` to
+record the event. Whether a new snapshot blob is written depends on
+composition-change detection (see
+[format.md §2.7](format.md#27-attribution-events)):
+
+- **Composition unchanged** since the previous fire (or, on first ever
+  fire, against the snapshot at the current `HEAD`): the hook MUST
+  append exactly one row to `attributions` referencing the existing
+  snapshot id, and MUST NOT write a new blob, advance any ref, or
+  otherwise mutate the snapshots table. This is the **no-change path**.
+- **Composition changed** (or no current `HEAD` snapshot, i.e. empty
+  repo first fire): the hook MUST write a new snapshot blob whose
+  `kind` is `"manual"` (or `"init"` if `HEAD` resolves to no commit yet,
+  i.e. the very first snapshot of an empty repo per
+  [format.md §4.4](format.md#44-the-empty-repository)), advance the
+  current branch ref to the new id, and append exactly one row to
+  `attributions` referencing the new id. `parentIds` MUST contain
+  exactly one id — the prior tip of the current branch — except on the
+  empty-repo first snapshot, where `parentIds` MUST be empty.
+
+Snapshots no longer carry a `sessionId` field; session attribution is
+captured exclusively through the attribution row.
 
 ### 2.1 Module discovery
 
@@ -139,10 +173,10 @@ For each captured module, the hook MUST:
 file bytes.
 
 The hook MUST NOT walk user-level `~/.claude/` or any non-project path —
-v0.1 capture is project-only by design. See
-[format.md §1.1](format.md#11-capture-scope-project-level-only-v01)
+v0.2 capture is project-only by design. See
+[format.md §1.1](format.md#11-capture-scope-project-level-only-v02)
 for the rationale (portability across machines outweighs fidelity to a
-single developer's runtime). User-level capture is a v0.2 candidate.
+single developer's runtime). User-level capture is a v0.3 candidate.
 
 ### 2.2 Module ordering
 
@@ -160,18 +194,48 @@ Implementations that diverge from this ordering will produce different
 ids for identical compositions and will not interoperate for content
 deduplication.
 
-### 2.3 What the hook does NOT capture in v0.1
+### 2.3 What the hook does NOT capture in v0.2
 
 - File contents of local-source modules. The blob records paths only;
   reproducing local sources from snapshot alone is not supported. See
-  [format.md §9.4](format.md#94-what-v02-is-expected-to-add).
+  [format.md §9.4](format.md#94-what-v03-is-expected-to-add).
 - Permissions / settings beyond what's needed to identify a module.
   `enabled` is recorded; the full ACL is not.
 - Process-level state (env vars, working directory beyond `--cwd`).
 
+### 2.4 Hot-path optimization (UserPromptSubmit cadence)
+
+Because `UserPromptSubmit` fires on every user prompt, the hook can run
+dozens of times per session. The hot-path optimization keeps the
+no-change path cheap:
+
+1. Compute a fast pre-hash of the project's `.claude/` tree using
+   filesystem mtimes (or an equivalent cheap signal). This MUST NOT
+   require reading file contents.
+2. Look up an in-process cache mapping `session_id` → `(fastHash,
+   snapshotId)`. (Implementations MAY persist this cache to disk; doing
+   so is OPTIONAL and adds no semantic guarantees.)
+3. If the cache has an entry for `session_id` and `entry.fastHash ==
+   fastHash`: short-circuit. Append an attribution row referencing
+   `entry.snapshotId` and exit.
+4. Otherwise: fall through to the full capture path (walk
+   `.claude/`, canonicalize, look up the would-be id in the `snapshots`
+   table, write a new blob if absent). After success, update the cache.
+
+The fast pre-hash is advisory: false negatives (mtime unchanged after a
+content edit) cost at most one missed attribution event for that
+prompt, never data corruption. Implementations SHOULD target **p95
+< 10ms** on the no-change path and **p95 < 50ms** on the change path.
+
+The cache is per-process and MAY be empty on hook startup; the first
+fire of any session always falls through to the full path. This is an
+acceptable warm-up cost.
+
 ## 3. Atomic write protocol
 
-The hook MUST write the snapshot blob atomically:
+The hook MUST write the snapshot blob atomically when composition
+changed (the change path; §2). On the no-change path, only step 6 runs
+(an attribution row insert).
 
 1. Canonicalize the blob (omit `id`); compute `id` per
    [format.md §3](format.md#3-snapshot-id-derivation).
@@ -182,13 +246,17 @@ The hook MUST write the snapshot blob atomically:
    POSIX file systems.
 4. `fsync` the temp file.
 5. `rename(2)` the temp file to `snapshots/<aa>/<rest>.json`.
-6. Open `lineage.sqlite` (in WAL mode), insert the snapshot,
-   parent edges, modules, and (if newly observed) the session row,
-   in a single transaction. Commit.
+6. Open `lineage.sqlite` (in WAL mode), in a single transaction:
+   - When composition changed: insert into `snapshots`,
+     `snapshot_parents`, `snapshot_modules`, then advance the branch
+     ref's row equivalent, then insert the attribution row.
+   - When composition unchanged: insert only the attribution row.
+   Commit.
 
-Steps 3–5 MUST NOT be reordered. Step 6 MUST be a transaction; partial
-writes that leave only the blob on disk are recoverable via reindex,
-but partial SQLite updates corrupt the index.
+Steps 3–5 MUST NOT be reordered and only execute on the change path.
+Step 6 MUST be a transaction; partial writes that leave only the blob
+on disk are recoverable via reindex, but partial SQLite updates corrupt
+the index.
 
 ## 4. Concurrency and idempotency
 
@@ -212,19 +280,21 @@ corruption:
 
 ### 4.2 Idempotency
 
-If the hook fires twice for the same `--session-id`, the second
-invocation MUST be a near-no-op:
+The attribution table's primary key is `(session_id, observed_at,
+event_kind)`. Implementations MUST handle a primary-key conflict on
+attribution insert as a successful no-op (the event was already
+recorded; retry is harmless). The hook MUST exit `0` in either case.
 
-- Lookup `sessions(id) = ?` in `lineage.sqlite`.
-- If found, the hook MUST NOT write a new snapshot blob.
-- The hook MAY update derived fields on the existing session row
-  (e.g. `started_at` if the runtime reports a corrected timestamp,
-  observed-use counts in `session_usage` if the runtime supplies
-  them). It MUST NOT change `snapshot_id`.
-- The hook MUST exit `0`.
+A retry of the same logical hook fire (same `session_id`,
+`hook_event_name`, and roughly the same `observed_at`) therefore
+collapses to at most one attribution row plus at most one new snapshot
+blob. The atomic write protocol (§3) guarantees the blob bytes are
+identical on retry, so the OS-level `rename(2)` is harmless if the
+filename was already taken.
 
-This rule lets runtimes safely retry the hook on transient failures
-without polluting the lineage.
+Implementations MAY round `observed_at` to a coarser resolution (e.g.
+to the second) to make retries collide more reliably. The default of
+millisecond precision is RECOMMENDED.
 
 ## 5. Performance budget
 
@@ -262,12 +332,20 @@ goes to stderr.
 
 ## 7. Examples
 
-[`examples/solo-no-apm/.harness/snapshots/0a/2b7a6700d1bb346e911bd1ad24ef632462ce10.json`](examples/solo-no-apm/.harness/snapshots/0a/2b7a6700d1bb346e911bd1ad24ef632462ce10.json)
-shows the output of an idealized hook on a project with no APM lockfile.
-Note `kind: "auto"`, `sessionId: "sess-162"`, and `parentIds: [<id of preceding edit>]`.
+> **v0.2.0 update pending.** The example blobs referenced below were
+> generated against the v0.1.x format (with `kind: "auto"` and
+> `sessionId` fields). They will be regenerated by
+> [scripts/build_examples.py](../scripts/build_examples.py) as part of
+> the canonical-bytes-derivation commit (see
+> [format.md §9.5](format.md#95-migration-from-v01x--v020)). Until that
+> commit lands, the linked file paths still resolve, but the contents
+> are v0.1.x-shaped.
 
-[`examples/team-shared/.harness/snapshots/b0/1045525b6701fd2f08965be0fd21b67f1ed8f0.json`](examples/team-shared/.harness/snapshots/b0/1045525b6701fd2f08965be0fd21b67f1ed8f0.json)
-shows the output on an APM-enabled project. Modules carry `source.kind:
-"apm"` where APM owns the path, `local` for a hand-edited `/plan`
-prompt, and `builtin` for Read/Write/Bash. `apmLockHash` is set to the
-sha256 of the lockfile bytes at snapshot time.
+`examples/solo-no-apm/.harness/snapshots/<aa>/<rest>.json` shows the
+output of an idealized hook on a project with no APM lockfile.
+
+`examples/team-shared/.harness/snapshots/<aa>/<rest>.json` shows the
+output on an APM-enabled project. Modules carry `source.kind: "apm"`
+where APM owns the path, `local` for a hand-edited `/plan` prompt, and
+`builtin` for Read/Write/Bash. `apmLockHash` is set to the sha256 of
+the lockfile bytes at snapshot time.

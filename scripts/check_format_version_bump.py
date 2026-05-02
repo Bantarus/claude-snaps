@@ -234,6 +234,34 @@ def diff_sql_enums(old_text: str, new_text: str) -> list[str]:
     return findings
 
 
+def detect_major_bump(old_text: str | None, new_text: str | None) -> tuple[str, str] | None:
+    """If snapshot.schema.json's formatVersion.default changed at all
+    (e.g. "0.1" → "0.2", or "0.2" → "1.0"), return (old_default,
+    new_default). Otherwise None.
+
+    Note: in this spec's terminology a 0.1 → 0.2 transition is a
+    major-bump-shape change per format.md §9.3 (even though §9.1 calls
+    both "same major (0.x)"). Any deliberate change to the default IS
+    the bump declaration; partial changes (e.g. patching "0.1" → "0.1.1"
+    when the schema is otherwise additive-optional) are not interesting
+    for this detector — minor bumps don't have findings to begin with.
+    """
+    if old_text is None or new_text is None:
+        return None
+    try:
+        old = json.loads(old_text)
+        new = json.loads(new_text)
+    except json.JSONDecodeError:
+        return None
+    old_default = old.get("properties", {}).get("formatVersion", {}).get("default")
+    new_default = new.get("properties", {}).get("formatVersion", {}).get("default")
+    if not isinstance(old_default, str) or not isinstance(new_default, str):
+        return None
+    if old_default != new_default:
+        return (old_default, new_default)
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -246,6 +274,10 @@ def main() -> int:
 
     findings: list[str] = []
     checked: list[str] = []
+
+    snapshot_old = show_at_ref("spec/schema/snapshot.schema.json", ref)
+    snapshot_new = read_current("spec/schema/snapshot.schema.json")
+    declared_major_bump = detect_major_bump(snapshot_old, snapshot_new)
 
     for path in SCHEMA_FILES:
         old = show_at_ref(path, ref)
@@ -275,14 +307,27 @@ def main() -> int:
         print("✓ minor-bump-safe — additions appear additive-optional only.")
         return 0
 
+    if declared_major_bump is not None:
+        old_v, new_v = declared_major_bump
+        print()
+        print(f"✓ declared major bump: formatVersion default {old_v!r} → {new_v!r}")
+        print("  Findings below are expected for this major bump (informational):")
+        for f in findings:
+            print(f)
+        print()
+        print("If this matches the change you intended, all good. If a finding")
+        print("looks unrelated to the declared bump, surface it before merging.")
+        return 0
+
     print()
     print("✗ major-bump indicators found (spec/format.md §9.3):")
     for f in findings:
         print(f)
     print()
-    print("If this is intentional (a real major bump), document it in")
-    print("spec/format.md §9.4 and bump the format version. If it is not,")
-    print("either back out the change or move it under an `x-` extension.")
+    print("If this is intentional (a real major bump), bump")
+    print("snapshot.schema.json's formatVersion.default to a new major")
+    print("(e.g. \"0.1\" → \"0.2\") and document the bump in spec/format.md §9.5.")
+    print("If it is not, back out the change or move it under an `x-` extension.")
     return 1
 
 
