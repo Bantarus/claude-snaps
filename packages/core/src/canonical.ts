@@ -8,8 +8,8 @@ import type { Snapshot } from './types.js';
 //      do NOT depend on V8 insertion order.
 //   2. No whitespace between tokens. JSON.stringify with no `space`.
 //   3. UTF-8 via TextEncoder (not Buffer — semantics drift across runtimes).
-//   4. Numbers: integer-only in v0.1 examples. Non-integer throws
-//      IntegrityError; RFC 8785 number canonicalization is v0.2.
+//   4. Numbers: integer-only in v0.2 examples. Non-integer throws
+//      IntegrityError; RFC 8785 number canonicalization is v0.3.
 //   5. The `id` field MUST be removed before hashing — destructure,
 //      do not mutate.
 //   6. The 40-char id is the lowercase hex prefix of the full sha256.
@@ -48,6 +48,10 @@ export function canonicalBytes(value: unknown): Uint8Array {
   return ENCODER.encode(JSON.stringify(sorted));
 }
 
+// (no other v0.2.0 changes to this module: `id` remains the only
+// field stripped before hashing; `sessionId` is no longer emitted by
+// the writer in the first place — see types.ts.)
+
 /**
  * Compute the snapshot id: sha256(canonicalBytes(snap \ 'id'))[:40],
  * lowercase hex.
@@ -76,7 +80,7 @@ function assertIntegerNumbers(value: unknown): void {
     }
     if (!Number.isInteger(value)) {
       throw new IntegrityError(
-        `non-integer numeric value (${String(value)}); RFC 8785 number canonicalization not implemented in v0.1`,
+        `non-integer numeric value (${String(value)}); RFC 8785 number canonicalization not implemented in v0.2`,
       );
     }
     return;

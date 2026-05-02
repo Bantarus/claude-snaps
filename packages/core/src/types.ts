@@ -29,26 +29,46 @@ export interface Module {
   source: ModuleSource;
 }
 
-export type SnapshotKind = 'init' | 'edit' | 'auto' | 'fork' | 'tag';
+export type SnapshotKind = 'init' | 'manual' | 'tag';
 
 export interface Snapshot {
   id: string;
   parentIds: string[];
   branch: string;
   kind: SnapshotKind;
-  message: string;
+  // Nullable in v0.2.0: hook-captured snapshots have no user-supplied
+  // message and write `null`. Manual `harness snap -m <msg>` writes the
+  // user's text; tag operations write the tag annotation.
+  message: string | null;
   version?: string;
   codePin: string | null;
   apmLockHash: string | null;
   createdAt: string;
-  sessionId?: string;
   author?: string;
   formatVersion?: string;
-  // Session-level context shipped in the SessionStart hook stdin payload.
-  // Both are optional: pre-amendment snapshots and non-hook writers omit them.
+  // Session-level context shipped in the hook stdin payload (SessionStart
+  // and UserPromptSubmit). Both optional: pre-amendment snapshots and
+  // non-hook writers omit them.
   model?: string;
   permissionMode?: string;
   modules: Module[];
+}
+
+// Attribution event — a session's observation of a snapshot at an
+// instant. Lives in lineage.sqlite only; no on-disk blob form. See
+// spec/format.md §2.7 and §5.4. Implementation lands in step 4.
+export type AttributionEventKind =
+  | 'session_start'    // SessionStart hook fired (fresh session)
+  | 'user_prompt'      // UserPromptSubmit hook fired
+  | 'manual_snap'      // user ran `harness snap`
+  | 'migrated';        // backfilled from v0.1.x snapshots.session_id
+
+export interface Attribution {
+  sessionId: string;
+  snapshotId: string;
+  observedAt: string;
+  eventKind: AttributionEventKind;
+  source: string | null; // 'startup'|'resume'|'clear'|'compact' for session_start; null otherwise
 }
 
 export interface DiffOp {

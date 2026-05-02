@@ -13,7 +13,7 @@ const SPEC_DIR = resolve(here, '../../../spec');
 const SOLO_NO_APM = resolve(SPEC_DIR, 'examples/solo-no-apm/.harness');
 
 const SAMPLE: Omit<Snapshot, 'id'> = {
-  formatVersion: '0.1',
+  formatVersion: '0.2',
   parentIds: [],
   branch: 'main',
   kind: 'init',
@@ -28,11 +28,15 @@ const SAMPLE: Omit<Snapshot, 'id'> = {
 
 describe('blob.readSnapshot', () => {
   test('reads and verifies an example snapshot', () => {
-    const initId = '0a2b7a6700d1bb346e911bd1ad24ef632462ce10'; // solo-no-apm init
-    const blob = readSnapshot(SOLO_NO_APM, initId);
-    expect(blob.id).toBe(initId);
-    expect(blob.kind).toBe('init');
-    expect(blob.parentIds).toEqual([]);
+    // Find solo-no-apm init by walking; the id changes each time the
+    // build_examples generator runs in v0.2 because canonical bytes
+    // depend on the v0.2 shape.
+    const ids = listSnapshots(SOLO_NO_APM);
+    const initBlob = ids.map((id) => readSnapshot(SOLO_NO_APM, id))
+      .find((b) => b.kind === 'init');
+    expect(initBlob).toBeDefined();
+    expect(initBlob!.parentIds).toEqual([]);
+    expect(initBlob!.kind).toBe('init');
   });
 
   test('reads every example blob and verifies hash integrity', () => {

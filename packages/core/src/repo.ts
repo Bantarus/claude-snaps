@@ -203,13 +203,9 @@ export class Repo {
 
   // ── hook helpers ─────────────────────────────────────────────────────
 
-  /**
-   * Find a snapshot by its `sessionId` field, or null. Used by the hook
-   * for idempotency: a second fire for the same session is a no-op.
-   */
-  findSnapshotBySessionId(sessionId: string): Snapshot | null {
-    return this.db.findSnapshotBySessionId(sessionId);
-  }
+  // findSnapshotBySessionId removed in v0.2.0: snapshots no longer carry
+  // a sessionId. Idempotency is now per (sessionId, observedAt, eventKind)
+  // on the attributions table — see step 4 (observe()).
 
   /**
    * Current branch name when HEAD is symbolic, null when HEAD is detached

@@ -11,10 +11,17 @@ import type { Snapshot, SnapshotKind } from './types.js';
 // runtime; we do NOT inline it as a TS string. Inlining would create
 // two sources of truth that drift.
 
-const SCHEMA_FILENAME = '001_init.sql';
-const CURRENT_SCHEMA_VERSION = 1;
-const HARNESS_FORMAT_VERSION = '0.1';
-const WRITER_NAME = '@harness/core@0.1.0';
+// On open we apply 001 then 002 (idempotent) so the runtime schema is
+// always v2: snapshots table without session_id, kind CHECK
+// init|manual|tag, attributions table available. Step 4 (Repo API
+// rework) fills attribution writes; step 6 ships `harness migrate`
+// which performs the data-layer migration (blob re-canonicalize +
+// dedup) for v0.1.x repos in the wild.
+const SCHEMA_FILENAME_V1 = '001_init.sql';
+const SCHEMA_FILENAME_V2 = '002_v0_2_decoupling.sql';
+const CURRENT_SCHEMA_VERSION = 2;
+const HARNESS_FORMAT_VERSION = '0.2';
+const WRITER_NAME = '@harness/core@0.2.0';
 
 // node:sqlite emits an ExperimentalWarning on first DatabaseSync() call in
 // Node 22-24. Suppress only that specific warning so we don't pollute
@@ -89,13 +96,13 @@ export class IndexDb {
       .prepare(
         `INSERT INTO snapshots
            (id, branch, kind, message, version, code_pin, apm_lock_hash,
-            session_id, author, created_at, format_version,
+            author, created_at, format_version,
             model, permission_mode)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         snap.id, snap.branch, snap.kind, snap.message, snap.version ?? null,
-        snap.codePin, snap.apmLockHash, snap.sessionId ?? null,
+        snap.codePin, snap.apmLockHash,
         snap.author ?? null, snap.createdAt,
         snap.formatVersion ?? HARNESS_FORMAT_VERSION,
         snap.model ?? null, snap.permissionMode ?? null,
@@ -136,15 +143,6 @@ export class IndexDb {
     const row = this.db
       .prepare('SELECT * FROM snapshots WHERE id = ?')
       .get(id) as unknown as SnapshotRow | undefined;
-    if (!row) return null;
-    return this.hydrate(row);
-  }
-
-  /** Find the snapshot whose `session_id` matches, or null. Used by the hook for idempotency. */
-  findSnapshotBySessionId(sessionId: string): Snapshot | null {
-    const row = this.db
-      .prepare('SELECT * FROM snapshots WHERE session_id = ? LIMIT 1')
-      .get(sessionId) as unknown as SnapshotRow | undefined;
     if (!row) return null;
     return this.hydrate(row);
   }
@@ -254,7 +252,6 @@ export class IndexDb {
       modules: mods.map(modFromRow),
     };
     if (row.version !== null) out.version = row.version;
-    if (row.session_id !== null) out.sessionId = row.session_id;
     if (row.author !== null) out.author = row.author;
     if (row.model !== null) out.model = row.model;
     if (row.permission_mode !== null) out.permissionMode = row.permission_mode;
@@ -292,8 +289,10 @@ function ensureSchema(db: DatabaseSync): void {
     .get();
 
   if (!present) {
-    const sql = readSchemaSql();
-    db.exec(sql);
+    // Fresh DB: apply 001 then 002 in order. 002 reshapes the v1 layout
+    // (drop session_id, broaden kind CHECK, add attributions table).
+    db.exec(readSchemaSql(SCHEMA_FILENAME_V1));
+    db.exec(readSchemaSql(SCHEMA_FILENAME_V2));
     const stamp = db.prepare(
       'INSERT OR REPLACE INTO _meta (key, value) VALUES (?, ?)',
     );
@@ -306,15 +305,23 @@ function ensureSchema(db: DatabaseSync): void {
   const row = db.prepare('SELECT version FROM _schema').get() as
     | { version: number }
     | undefined;
-  if (row?.version !== CURRENT_SCHEMA_VERSION) {
+  const have = row?.version ?? 0;
+  if (have === 1) {
+    // Existing v0.1.x DB: apply 002 to bring it to v2. The data-layer
+    // migration (blob re-canonicalize + dedup) is `harness migrate`,
+    // landed in step 6; this only reshapes the schema.
+    db.exec(readSchemaSql(SCHEMA_FILENAME_V2));
+    return;
+  }
+  if (have !== CURRENT_SCHEMA_VERSION) {
     throw new IntegrityError(
-      `schema version mismatch: expected ${CURRENT_SCHEMA_VERSION}, got ${row?.version ?? 'none'}`,
+      `schema version mismatch: expected ${CURRENT_SCHEMA_VERSION}, got ${have}`,
     );
   }
 }
 
-function readSchemaSql(): string {
-  const path = locateSchemaFile();
+function readSchemaSql(name: string): string {
+  const path = locateSchemaFile(name);
   try {
     return readFileSync(path, 'utf-8');
   } catch (cause) {
@@ -323,22 +330,22 @@ function readSchemaSql(): string {
 }
 
 /**
- * Walk up from this module's directory looking for `spec/schema/001_init.sql`.
+ * Walk up from this module's directory looking for `spec/schema/<name>`.
  * Works in monorepo dev (where `spec/` lives at the repo root) and in any
  * environment where the spec directory has been copied alongside the package.
  */
-function locateSchemaFile(): string {
+function locateSchemaFile(name: string): string {
   const start = dirname(fileURLToPath(import.meta.url));
   let cur = start;
   for (let i = 0; i < 8; i++) {
-    const candidate = resolve(cur, 'spec', 'schema', SCHEMA_FILENAME);
+    const candidate = resolve(cur, 'spec', 'schema', name);
     if (existsSync(candidate)) return candidate;
     const parent = dirname(cur);
     if (parent === cur) break;
     cur = parent;
   }
   throw new IoError(
-    `could not locate spec/schema/${SCHEMA_FILENAME} starting from ${start}; in a published package, ship the file alongside dist/`,
+    `could not locate spec/schema/${name} starting from ${start}; in a published package, ship the file alongside dist/`,
   );
 }
 
@@ -366,11 +373,10 @@ interface SnapshotRow {
   id: string;
   branch: string;
   kind: SnapshotKind;
-  message: string;
+  message: string | null;
   version: string | null;
   code_pin: string | null;
   apm_lock_hash: string | null;
-  session_id: string | null;
   author: string | null;
   created_at: string;
   format_version: string;

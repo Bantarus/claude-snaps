@@ -1,0 +1,59 @@
+{
+  "apmLockHash": null,
+  "branch": "main",
+  "codePin": null,
+  "createdAt": "2026-04-03T00:00:00.000Z",
+  "formatVersion": "0.2",
+  "id": "641137a06e841d897aeedd11133f40b041f6ab99",
+  "kind": "manual",
+  "message": "compat fixture: merge of left and right",
+  "modules": [
+    {
+      "enabled": true,
+      "name": "senior-eng",
+      "source": {
+        "kind": "local",
+        "path": ".claude/agents/senior-eng.md"
+      },
+      "type": "chatmode"
+    },
+    {
+      "enabled": true,
+      "name": "Read",
+      "source": {
+        "kind": "builtin"
+      },
+      "type": "mcp"
+    },
+    {
+      "enabled": true,
+      "name": "Bash",
+      "source": {
+        "kind": "builtin"
+      },
+      "type": "mcp"
+    },
+    {
+      "enabled": true,
+      "name": "left-only",
+      "source": {
+        "kind": "local",
+        "path": ".claude/skills/left-only/SKILL.md"
+      },
+      "type": "skill"
+    },
+    {
+      "enabled": true,
+      "name": "right-only",
+      "source": {
+        "kind": "local",
+        "path": ".claude/skills/right-only/SKILL.md"
+      },
+      "type": "skill"
+    }
+  ],
+  "parentIds": [
+    "4f879e686bf40c2d72bb92543d5a298e4eab9751",
+    "ef76f830568eb7ba5186cd520c37177e7b0b0a0c"
+  ]
+}

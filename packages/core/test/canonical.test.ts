@@ -12,10 +12,10 @@ const SPEC_DIR = resolve(here, '../../../spec');
 // The literal test vector from spec/format.md §3.2 — copied verbatim
 // (with `id` omitted, as the spec specifies).
 const TV_INPUT: Omit<Snapshot, 'id'> = {
-  formatVersion: '0.1',
+  formatVersion: '0.2',
   parentIds: ['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'],
   branch: 'main',
-  kind: 'edit',
+  kind: 'manual',
   message: '+ postgres MCP',
   codePin: 'b22e80aa12cc34dd56ee78ff90aabbccddeeff00',
   createdAt: '2026-04-29T18:20:00.000Z',
@@ -37,14 +37,17 @@ const TV_INPUT: Omit<Snapshot, 'id'> = {
   ],
 };
 
-const FIXTURE_DIGEST = '977d89c4deef44ae18ab764350d01a54357b84ec92d077de2a9a4531c1048e26';
-const FIXTURE_ID = '977d89c4deef44ae18ab764350d01a54357b84ec';
+// v0.2.0 fixture digest. Filename `canonical-501.bin` is historical
+// (the v0.1.1 fixture was 501 bytes); the v0.2.0 fixture is 503 bytes.
+const FIXTURE_DIGEST = '2f9993556a22abc7f52e5af006affd1e76a2c5b73bb403debe3e070325b9d4a2';
+const FIXTURE_ID = '2f9993556a22abc7f52e5af006affd1e76a2c5b7';
+const FIXTURE_BYTE_LENGTH = 503;
 
-describe('canonical-501 fixture (Gate 1)', () => {
+describe('canonical fixture (Gate 1)', () => {
   test('canonicalBytes(TV_INPUT) is byte-identical to spec/test-vectors/canonical-501.bin', () => {
     const expected = readFileSync(resolve(SPEC_DIR, 'test-vectors/canonical-501.bin'));
     const actual = canonicalBytes(TV_INPUT);
-    expect(actual.byteLength).toBe(501);
+    expect(actual.byteLength).toBe(FIXTURE_BYTE_LENGTH);
     expect(actual.byteLength).toBe(expected.byteLength);
     expect(Buffer.from(actual).equals(expected)).toBe(true);
   });

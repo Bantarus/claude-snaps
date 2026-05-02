@@ -39,12 +39,12 @@ function stableDump(dbPath: string): string {
 }
 
 describe('IndexDb.open + ensureSchema', () => {
-  test('opening fresh creates schema v1, ensures _schema row, stamps _meta', () => {
+  test('opening fresh creates schema v2, ensures _schema row, stamps _meta', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harness-fresh-'));
     const idx = IndexDb.open(dir);
     idx.close();
     const db = new DatabaseSync(join(dir, 'lineage.sqlite'), { readOnly: true });
-    expect(db.prepare('SELECT version FROM _schema').get()).toEqual({ version: 1 });
+    expect(db.prepare('SELECT version FROM _schema').get()).toEqual({ version: 2 });
     const meta = db.prepare('SELECT key FROM _meta').all() as { key: string }[];
     const keys = new Set(meta.map((r) => r.key));
     expect(keys.has('format_version')).toBe(true);
@@ -110,7 +110,7 @@ describe('IndexDb.reindex', () => {
       .prepare(
         'SELECT COUNT(*) AS n FROM snapshot_parents WHERE child_id = ?',
       )
-      .get('7d06314c53ca7113f9573b07ed8d69e79029aa6d') as { n: number };
+      .get('641137a06e841d897aeedd11133f40b041f6ab99') as { n: number };
     expect(row.n).toBe(2);
     // x-* extension survived the source_kind CHECK constraint.
     const xCount = db
@@ -138,7 +138,7 @@ describe('IndexDb queries', () => {
     const dir = copyExample('team-shared');
     const idx = IndexDb.open(dir);
     idx.reindex();
-    const snap = idx.getSnapshot('e6e76866ce636119129509a831acab5a2f70b2b5');
+    const snap = idx.getSnapshot('aa42cc7c5c010c2733f1f8eae770d9765c4efb08');
     expect(snap).not.toBeNull();
     expect(snap!.kind).toBe('tag');
     expect(snap!.version).toBe('v0.4');
