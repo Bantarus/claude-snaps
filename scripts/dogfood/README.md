@@ -29,8 +29,18 @@ the cheapest configuration on purpose.
 
 ## Prerequisites
 
-- `harness` and `harness-hook` on `$PATH` (run `pnpm link --global`
-  from `packages/cli/` and `packages/hook/` once if you haven't).
+- `harness` and `harness-hook` on `$PATH`. Two ways:
+  - **Symlink to `~/.local/bin/`** (recommended — persistent, simple):
+    ```bash
+    mkdir -p ~/.local/bin
+    ln -sf "$PWD/packages/cli/bin/harness"        ~/.local/bin/harness
+    ln -sf "$PWD/packages/hook/bin/harness-hook"  ~/.local/bin/harness-hook
+    ```
+    `~/.local/bin` is already on PATH on most setups (XDG default).
+    This works for `claude` too — it spawns the hook by bare name
+    via PATH lookup.
+  - Or `pnpm link --global` if you've run `pnpm setup` (less reliable
+    across shell restarts; PNPM_HOME has to be in the rc file).
 - `claude` CLI installed and authenticated.
 - A scratch directory you don't mind blowing away. Default:
   `$HOME/harness-dogfood-soak`. Override with `SOAK_DIR=...`.
@@ -38,6 +48,11 @@ the cheapest configuration on purpose.
 ```bash
 which harness && which harness-hook && which claude   # all 3 should resolve
 ```
+
+The dogfood scripts also fall back to absolute monorepo paths if
+nothing's on PATH (see `lib.sh`), but Claude Code itself can't —
+it needs `harness-hook` resolvable when it spawns the hook from
+`settings.json`. So linking is the better path.
 
 ## Schedule overview
 
