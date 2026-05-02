@@ -139,6 +139,46 @@ export function listSnapshots(harnessDir: string): string[] {
   return ids;
 }
 
+/**
+ * Read a snapshot blob WITHOUT hash verification. Used by migration
+ * tooling that reads v0.1.x blobs whose canonical-id derivation rule
+ * has since changed (§3.1 in v0.2.0); a verifying read would throw on
+ * every legacy blob. Use only when you intend to rewrite the blob.
+ */
+export function readSnapshotRaw(harnessDir: string, id: string): Snapshot {
+  if (!/^[0-9a-f]{40}$/.test(id)) {
+    throw new IntegrityError(`invalid snapshot id (must be 40 hex): ${id}`);
+  }
+  const path = blobPath(harnessDir, id);
+  let raw: string;
+  try {
+    raw = readFileSync(path, 'utf-8');
+  } catch (cause) {
+    throw new IoError(`failed to read snapshot ${id} at ${path}`, cause);
+  }
+  try {
+    return JSON.parse(raw) as Snapshot;
+  } catch (cause) {
+    throw new ParseError(`invalid JSON in ${path}`, cause);
+  }
+}
+
+/**
+ * Delete a snapshot blob from disk by id. Used by migration when an
+ * old-id blob has been replaced at a new path. No-op if the blob is
+ * already absent.
+ */
+export function deleteSnapshotBlob(harnessDir: string, id: string): void {
+  const path = blobPath(harnessDir, id);
+  try {
+    // node:fs/sync rmSync is synchronous + idempotent on missing paths.
+    const fs = require('node:fs') as typeof import('node:fs');
+    fs.rmSync(path, { force: true });
+  } catch (cause) {
+    throw new IoError(`failed to delete snapshot blob at ${path}`, cause);
+  }
+}
+
 // ── private ────────────────────────────────────────────────────────────────
 
 function blobPath(harnessDir: string, id: string): string {

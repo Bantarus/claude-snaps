@@ -35,3 +35,6 @@ export { Repo } from './repo.js';
 export type { RepoInitOptions } from './repo.js';
 
 export type { ListSnapshotsFilter, ReindexResult } from './index_db.js';
+
+export { migrateV1ToV2 } from './migrate.js';
+export type { MigrationResult } from './migrate.js';

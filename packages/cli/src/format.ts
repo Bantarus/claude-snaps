@@ -48,11 +48,9 @@ export const c = {
   },
   kind(k: SnapshotKind): string {
     switch (k) {
-      case 'init': return c.bold('★');
-      case 'tag':  return c.chg('◆');
-      case 'fork': return c.type('skill', '⎇');
-      case 'auto': return c.add('▶');
-      case 'edit': return c.dim('·');
+      case 'init':   return c.bold('★');
+      case 'tag':    return c.chg('◆');
+      case 'manual': return c.add('▶');
     }
   },
 };

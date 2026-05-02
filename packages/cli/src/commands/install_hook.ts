@@ -45,9 +45,15 @@ interface HookMatcher {
   hooks: HookEntry[];
 }
 interface SettingsShape {
-  hooks?: { SessionStart?: HookMatcher[] };
+  hooks?: {
+    SessionStart?: HookMatcher[];
+    UserPromptSubmit?: HookMatcher[];
+  };
   [key: string]: unknown;
 }
+
+const HOOK_EVENTS = ['SessionStart', 'UserPromptSubmit'] as const;
+type HookEvent = (typeof HOOK_EVENTS)[number];
 
 export async function cmdInstallHook(parsed: ParsedArgs): Promise<number> {
   const cwd = process.cwd();
@@ -89,37 +95,47 @@ export async function cmdInstallHook(parsed: ParsedArgs): Promise<number> {
   // 4. Read current settings. Missing → empty; invalid → refuse.
   const before: SettingsShape = readSettingsOrRefuse(settingsPath);
 
-  // 5. Compute new settings: deep-clone, append our hook entry.
+  // 5. Compute new settings: deep-clone, append our hook entry to BOTH
+  //    SessionStart and UserPromptSubmit (v0.2.0 dual-event capture).
   const after: SettingsShape = JSON.parse(JSON.stringify(before)) as SettingsShape;
   after.hooks = after.hooks ?? {};
-  after.hooks.SessionStart = after.hooks.SessionStart ?? [];
+
+  let alreadyHas = false;
+  for (const event of HOOK_EVENTS) {
+    const list = (after.hooks[event] ?? []) as HookMatcher[];
+    if (list.some((m) =>
+      (m.hooks ?? []).some((h) => typeof h.command === 'string' && h.command.includes('harness-hook')),
+    )) {
+      alreadyHas = true;
+    }
+  }
 
   // 6. Refuse re-install unless --force.
-  const alreadyHas = (after.hooks.SessionStart ?? []).some((m) =>
-    (m.hooks ?? []).some((h) => typeof h.command === 'string' && h.command.includes('harness-hook')),
-  );
   if (alreadyHas && !force) {
     throw new IoError(
       `harness-hook is already installed in .claude/settings.json. Pass --force to reinstall.`,
     );
   }
-  if (alreadyHas && force) {
-    // Strip existing harness-hook entries so --force truly reinstalls
-    // without leaving zombies.
-    after.hooks.SessionStart = after.hooks.SessionStart!
-      .map((m) => ({
-        ...m,
-        hooks: (m.hooks ?? []).filter(
-          (h) => !(typeof h.command === 'string' && h.command.includes('harness-hook')),
-        ),
-      }))
-      .filter((m) => (m.hooks ?? []).length > 0);
-  }
 
-  after.hooks.SessionStart.push({
-    matcher: '*',
-    hooks: [{ type: 'command', command: HOOK_COMMAND }],
-  });
+  for (const event of HOOK_EVENTS) {
+    after.hooks[event] = (after.hooks[event] ?? []) as HookMatcher[];
+    if (alreadyHas && force) {
+      // Strip existing harness-hook entries so --force truly reinstalls
+      // without leaving zombies.
+      after.hooks[event] = after.hooks[event]!
+        .map((m) => ({
+          ...m,
+          hooks: (m.hooks ?? []).filter(
+            (h) => !(typeof h.command === 'string' && h.command.includes('harness-hook')),
+          ),
+        }))
+        .filter((m) => (m.hooks ?? []).length > 0);
+    }
+    after.hooks[event]!.push({
+      matcher: '*',
+      hooks: [{ type: 'command', command: HOOK_COMMAND }],
+    });
+  }
 
   // 7. Backup BEFORE writing — even on --force.
   if (existsSync(settingsPath)) {
@@ -142,10 +158,15 @@ export async function cmdInstallHook(parsed: ParsedArgs): Promise<number> {
   // 10. Atomic write of the new settings.
   atomicWrite(settingsPath, afterStr + '\n');
   process.stdout.write(
-    `Hook installed. Next Claude Code session in this directory will be auto-snapshotted.\n`,
+    `Hook installed. Next session start AND every user prompt in this ` +
+    `directory will be captured by harness-hook (v0.2.0 dual-event).\n`,
   );
   return 0;
 }
+
+// Suppress unused-import lint for HookEvent type (referenced via HOOK_EVENTS).
+const _hookEventType: HookEvent = 'SessionStart';
+void _hookEventType;
 
 // ── private ────────────────────────────────────────────────────────────────
 

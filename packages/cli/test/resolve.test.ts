@@ -10,8 +10,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const SPEC_DIR = resolve(here, '../../../spec');
 const TEAM = resolve(SPEC_DIR, 'examples/team-shared');
 
-const MAIN_TIP = 'e6e76866ce636119129509a831acab5a2f70b2b5';
-const EXP_TIP = '07b0886ea7978ab50f0fc59fecb514c685cb310b';
+// v0.2.0 fixture ids (regenerated under §3.1 strip; see spec/test-vectors/README.md).
+const MAIN_TIP = '0ab4f7c92c551342fb585c709dc6e5c2bbb71c89';
+const EXP_TIP = '50f074787cd86a84dee47859ed631dcd2fd70019';
 
 function copyExample(name: string): string {
   const proj = mkdtempSync(join(tmpdir(), `harness-resolve-${name}-`));

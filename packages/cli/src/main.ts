@@ -7,6 +7,9 @@ import { cmdBranch } from './commands/branch.js';
 import { cmdCheckout } from './commands/checkout.js';
 import { cmdReindex } from './commands/reindex.js';
 import { cmdInstallHook } from './commands/install_hook.js';
+import { cmdSnap } from './commands/snap.js';
+import { cmdSessions } from './commands/sessions.js';
+import { cmdMigrate } from './commands/migrate.js';
 
 export interface ParsedArgs {
   command: string | null;
@@ -46,6 +49,18 @@ export function parseArgs(argv: string[]): ParsedArgs {
       continue;
     }
     if (a.startsWith('-')) {
+      // Single short flag with a value: `-m message`. The only short
+      // flag with a value in v0.2 is `-m` (snap message). Add others
+      // here as needed; default behavior throws so typos surface.
+      if (a === '-m') {
+        const next = argv[i + 1];
+        if (next === undefined) {
+          throw new Error(`-m requires a value`);
+        }
+        flags['m'] = next;
+        i++;
+        continue;
+      }
       throw new Error(`unknown short flag: ${a}`);
     }
     if (command === null) command = a;
@@ -58,13 +73,18 @@ const HELP = `Usage: harness <command> [args...] [--flags]
 
 Commands:
   init [--branch=<name>]                  Initialize a new .harness/ in cwd.
-  log [--branch=<name>] [--limit=N]       List snapshots, newest first.
+  log [--branch=<name>] [--limit=N]
+      [--with-sessions]                   List snapshots, newest first.
   diff <a> <b>                            Diff two snapshots' modules.
+  snap [-m <message>]                     Manual capture of current state.
+  sessions [<session-id>]                 List sessions, or render a trajectory.
   tag <name> [<id>] [--force]             Tag a snapshot (defaults to HEAD).
   branch <name> [<id>] [--force]          Create a branch at <id> or HEAD.
   checkout <ref>                          Move HEAD to <ref>.
+  migrate                                 v0.1.x → v0.2.0 in-place migration.
   reindex                                 Rebuild lineage.sqlite from snapshots/.
-  install-hook [--force]                  Wire harness-hook into .claude/settings.json.
+  install-hook [--force]                  Wire harness-hook into .claude/settings.json
+                                            (SessionStart + UserPromptSubmit).
 
 Refs accept: 40-hex id, 6+-hex prefix, HEAD, branch name, tag name.
 
@@ -77,9 +97,12 @@ export async function dispatch(parsed: ParsedArgs): Promise<number> {
     case 'init':         return cmdInit(parsed);
     case 'log':          return cmdLog(parsed);
     case 'diff':         return cmdDiff(parsed);
+    case 'snap':         return cmdSnap(parsed);
+    case 'sessions':     return cmdSessions(parsed);
     case 'tag':          return cmdTag(parsed);
     case 'branch':       return cmdBranch(parsed);
     case 'checkout':     return cmdCheckout(parsed);
+    case 'migrate':      return cmdMigrate(parsed);
     case 'reindex':      return cmdReindex(parsed);
     case 'install-hook': return cmdInstallHook(parsed);
     case null:
