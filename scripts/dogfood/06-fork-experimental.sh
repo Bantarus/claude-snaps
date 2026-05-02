@@ -11,9 +11,11 @@ say "day 06 — fork experimental + diverge"
 cd "$SOAK_DIR"
 
 # Get the v0.1 tag's snapshot id as our fork point.
-FORK_FROM="$("$HARNESS" log 2>/dev/null | grep -E '\bv0\.1\b' | head -1 | awk '{print $1}' || true)"
-if [ -z "$FORK_FROM" ]; then
-  note "warning: couldn't find v0.1 tag; using current HEAD"
+if [ -f "$SOAK_DIR/.harness/refs/tags/v0.1" ]; then
+  FORK_FROM="$(cat "$SOAK_DIR/.harness/refs/tags/v0.1")"
+  note "found v0.1 tag: $FORK_FROM"
+else
+  note "warning: v0.1 tag not found; using current HEAD"
   FORK_FROM="$("$HARNESS" log | head -1 | awk '{print $1}')"
 fi
 note "forking from snapshot $FORK_FROM"
