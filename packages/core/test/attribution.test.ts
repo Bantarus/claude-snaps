@@ -339,9 +339,9 @@ describe('schema migration 001 + 002 (Gate 11 — schema)', () => {
       repo.close();
     }
 
-    // Schema is v2 now.
+    // Schema migrated past v2 to current (Repo.open chains 001 → 002 → 003).
     const verify = new DatabaseSync(dbPath, { readOnly: true });
-    expect(verify.prepare('SELECT version FROM _schema').get()).toEqual({ version: 2 });
+    expect(verify.prepare('SELECT version FROM _schema').get()).toEqual({ version: 3 });
     verify.close();
   });
 });

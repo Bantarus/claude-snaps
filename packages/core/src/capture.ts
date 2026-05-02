@@ -8,10 +8,15 @@ import type { Module, ModuleSource, ModuleType } from './types.js';
 // captureCurrentState walks `<projectRoot>/.claude/`, identifies every
 // active primitive, optionally enriches it with APM source attribution
 // from `<projectRoot>/apm.lock.yaml`, and returns the canonical Module[]
-// that the SessionStart hook (and the editor's working-tree view) will
-// hand to writeSnapshot.
+// that the hook (and the editor's working-tree view) will hand to
+// writeSnapshot.
 //
 // One implementation, two consumers — see spec/hooks.md §2.1.
+//
+// captureCurrentStateFast (below) is the hot-path companion: a cheap
+// fingerprint over filesystem mtimes/sizes, used by the hook to detect
+// "no change since last fire" without doing the full walk + frontmatter
+// parses. False negatives cost at most one missed attribution event.
 
 const BUILTIN_TOOLS = [
   'Bash', 'Edit', 'Glob', 'Grep', 'Read', 'Write',
@@ -269,4 +274,89 @@ function canonicalModuleOrder(a: Module, b: Module): number {
 
 function relativePosix(from: string, to: string): string {
   return relative(from, to).split(/[\\/]/).join('/');
+}
+
+/**
+ * Fast composition fingerprint for the hook's hot-path optimization
+ * (spec/hooks.md §2.4). Returns a 40-char hex digest derived from the
+ * mtimes and sizes of the files that the full capture walk would read.
+ * Includes `apm.lock.yaml` — a lockfile change can shift APM-source
+ * module identities without any change under `.claude/`.
+ *
+ * Properties:
+ * - Cheap. Walks the same paths as captureCurrentState but reads only
+ *   directory listings and stat metadata (no file contents, no
+ *   frontmatter parses). Target: <2ms p95 on a project with 200
+ *   captured files.
+ * - Approximate. Two compositions with structurally identical files
+ *   but different mtimes produce different fingerprints (false
+ *   positive — full walk runs, attribution recorded correctly). The
+ *   inverse is the failure mode: if a tool modifies file content
+ *   without bumping mtime/size (rare; some sandboxed editors), the
+ *   fingerprint matches and the hook skips the full walk. Cost is at
+ *   most one missed attribution event for that prompt — the next fire
+ *   that DOES bump mtime catches up.
+ * - Deterministic given filesystem state. Same inputs → same output.
+ *
+ * The hash composition: `(path, mtime_ms, size)` for every file plus
+ * directory entries, recursively under `.claude/` and for the project-
+ * root-level `CLAUDE.md`, `AGENTS.md`, and `apm.lock.yaml`. Walk order
+ * is deterministic (entries sorted) so the hash is stable.
+ */
+export function captureCurrentStateFast(projectRoot: string): string {
+  const hash = createHash('sha256');
+  const claudeDir = join(projectRoot, '.claude');
+  hashPath(hash, claudeDir, '.claude');
+  walkAndHashFast(hash, claudeDir, '.claude');
+  for (const f of ['CLAUDE.md', 'AGENTS.md', 'apm.lock.yaml']) {
+    hashPath(hash, join(projectRoot, f), f);
+  }
+  return hash.digest('hex').slice(0, 40);
+}
+
+function walkAndHashFast(
+  hash: ReturnType<typeof createHash>,
+  abs: string,
+  rel: string,
+): void {
+  let entries: import('node:fs').Dirent[];
+  try {
+    entries = readdirSync(abs, { withFileTypes: true });
+  } catch {
+    return; // ENOENT and other read errors → walk truncates here
+  }
+  // Sort by name to make the hash deterministic across filesystems.
+  entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  for (const e of entries) {
+    const childAbs = join(abs, e.name);
+    const childRel = `${rel}/${e.name}`;
+    hashPath(hash, childAbs, childRel);
+    if (e.isDirectory()) walkAndHashFast(hash, childAbs, childRel);
+  }
+}
+
+function hashPath(
+  hash: ReturnType<typeof createHash>,
+  abs: string,
+  rel: string,
+): void {
+  // Single stat per path. lstat would also work; we use stat to follow
+  // symlinks the same way captureCurrentState does (it readFiles them).
+  let stat;
+  try {
+    stat = statSync(abs);
+  } catch {
+    // Absent: hash a sentinel so the absence itself participates in
+    // the digest (so a deletion since the last fire is detected).
+    hash.update(`${rel} ABSENT\n`);
+    return;
+  }
+  // mtimeMs + size + a one-byte type tag are sufficient to detect:
+  //   - file contents changed (mtimeMs moves)
+  //   - file replaced with directory (or vice versa) (type tag flips)
+  //   - file truncated/extended (size moves)
+  // Excludes inode number and ctime — those vary across filesystems
+  // for content-equivalent state and would create spurious mismatches.
+  const tag = stat.isDirectory() ? 'D' : stat.isFile() ? 'F' : 'O';
+  hash.update(`${rel} ${tag} ${stat.mtimeMs} ${stat.size}\n`);
 }

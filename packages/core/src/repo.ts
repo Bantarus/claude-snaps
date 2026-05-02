@@ -325,6 +325,51 @@ export class Repo {
     return this.db.sessionsAt(snapshotId);
   }
 
+  // ── hot-path cache (hook internal; see spec/hooks.md §2.4) ──────────
+
+  /**
+   * Lookup the cached observation result for a session. Returns null
+   * when there's no cache entry. Implementation-internal — the cache
+   * is best-effort; treat null as "must re-observe."
+   */
+  readObservationCache(sessionId: string): { fastHash: string; snapshotId: string } | null {
+    return this.db.readObservationCache(sessionId);
+  }
+
+  /**
+   * Persist this fire's (fastHash, snapshotId) for the next fire of
+   * the same session to short-circuit. Call this AFTER observe() has
+   * committed the attribution; if it throws or the process dies before
+   * this call, the next fire safely re-walks. Not in the same
+   * transaction as the attribution write (deliberate).
+   */
+  writeObservationCache(sessionId: string, fastHash: string, snapshotId: string): void {
+    this.db.writeObservationCache(sessionId, fastHash, snapshotId);
+  }
+
+  /**
+   * Append an attribution event referencing an existing snapshot,
+   * without doing the full filesystem walk. Used by the hook's
+   * hot-path: a fastHash cache hit means composition is unchanged
+   * since the last fire, so we can attribute against the cached
+   * snapshot id without re-running observe(). Idempotent on PK.
+   */
+  appendAttribution(event: {
+    sessionId: string;
+    snapshotId: string;
+    eventKind: AttributionEventKind;
+    source?: string | null;
+    now?: string;
+  }): void {
+    this.db.insertAttribution({
+      sessionId: event.sessionId,
+      snapshotId: event.snapshotId,
+      observedAt: event.now ?? new Date().toISOString(),
+      eventKind: event.eventKind,
+      source: event.source ?? null,
+    });
+  }
+
   /**
    * Current branch name when HEAD is symbolic, null when HEAD is detached
    * or absent. The branch name is the path under `refs/heads/`, e.g. `main`.

@@ -39,12 +39,12 @@ function stableDump(dbPath: string): string {
 }
 
 describe('IndexDb.open + ensureSchema', () => {
-  test('opening fresh creates schema v2, ensures _schema row, stamps _meta', () => {
+  test('opening fresh creates schema v3, ensures _schema row, stamps _meta', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harness-fresh-'));
     const idx = IndexDb.open(dir);
     idx.close();
     const db = new DatabaseSync(join(dir, 'lineage.sqlite'), { readOnly: true });
-    expect(db.prepare('SELECT version FROM _schema').get()).toEqual({ version: 2 });
+    expect(db.prepare('SELECT version FROM _schema').get()).toEqual({ version: 3 });
     const meta = db.prepare('SELECT key FROM _meta').all() as { key: string }[];
     const keys = new Set(meta.map((r) => r.key));
     expect(keys.has('format_version')).toBe(true);

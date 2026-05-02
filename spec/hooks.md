@@ -209,27 +209,41 @@ Because `UserPromptSubmit` fires on every user prompt, the hook can run
 dozens of times per session. The hot-path optimization keeps the
 no-change path cheap:
 
-1. Compute a fast pre-hash of the project's `.claude/` tree using
-   filesystem mtimes (or an equivalent cheap signal). This MUST NOT
-   require reading file contents.
-2. Look up an in-process cache mapping `session_id` → `(fastHash,
-   snapshotId)`. (Implementations MAY persist this cache to disk; doing
-   so is OPTIONAL and adds no semantic guarantees.)
+1. Compute a fast pre-hash of the project's `.claude/` tree plus
+   `apm.lock.yaml` using filesystem mtimes/sizes (or an equivalent
+   cheap signal). This MUST NOT require reading file contents. The
+   lockfile is included because an APM dependency change is a
+   composition change even when nothing under `.claude/` moved.
+2. Look up the per-session cache: `(session_id) → (fastHash,
+   snapshotId)`. Where the cache lives is implementation-defined and
+   non-normative; the reference implementation (`@harness/core`)
+   stores it inside `lineage.sqlite` (table
+   `session_observation_cache`, schema-only added in migration `003`),
+   keeping the cache reconstructible from blobs alongside the rest of
+   the index. Other writers MAY use a different storage mechanism
+   (in-process for long-lived hosts, on-disk file, etc.) or skip the
+   optimization entirely.
 3. If the cache has an entry for `session_id` and `entry.fastHash ==
    fastHash`: short-circuit. Append an attribution row referencing
-   `entry.snapshotId` and exit.
+   `entry.snapshotId` and exit. The cache row stays as-is (still valid).
 4. Otherwise: fall through to the full capture path (walk
-   `.claude/`, canonicalize, look up the would-be id in the `snapshots`
-   table, write a new blob if absent). After success, update the cache.
+   `.claude/`, canonicalize, run composition-change detection vs. the
+   head snapshot's modules per §2). After the attribution commits,
+   refresh the cache with the new `(fastHash, snapshotId)`. The cache
+   write MUST NOT share a transaction with the attribution insert: a
+   failed cache write or a process crash between the attribution and
+   the cache update is harmless (the next fire safely re-walks).
 
 The fast pre-hash is advisory: false negatives (mtime unchanged after a
 content edit) cost at most one missed attribution event for that
 prompt, never data corruption. Implementations SHOULD target **p95
-< 10ms** on the no-change path and **p95 < 50ms** on the change path.
+< 10ms** on the no-change path (cache hit) and **p95 < 50ms** on the
+change path (cache miss).
 
-The cache is per-process and MAY be empty on hook startup; the first
-fire of any session always falls through to the full path. This is an
-acceptable warm-up cost.
+The cache is the index's, not a primary data store: it is
+reconstructible (drop it, no data loss) and a fresh `harness reindex`
+MAY clear it. The first fire of any session is always a cache miss and
+runs the full path — an acceptable warm-up cost.
 
 ## 3. Atomic write protocol
 

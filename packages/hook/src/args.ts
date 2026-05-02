@@ -4,12 +4,12 @@
 //   1. stdin JSON — the canonical Claude Code path. The host passes:
 //        { session_id, cwd, hook_event_name, transcript_path, source,
 //          model, agent_type? }
-//      Snake_case fields. session_id and cwd are mandatory; the others
-//      are observed-and-ignored in v0.1.
+//      Snake_case fields. session_id, cwd, and hook_event_name are the
+//      operational core; the others enrich newly-written snapshots.
 //
 //   2. CLI flags — testing path and fallback for hosts that follow our
 //      spec/hooks.md description literally:
-//        --session-id <id>  --cwd <path>  --reason <auto|manual|fork>
+//        --session-id <id>  --cwd <path>  --hook-event-name <name>
 //        --dry-run
 //
 //   3. Environment — last-resort fallback. CLAUDE_PROJECT_DIR is the
@@ -20,15 +20,20 @@
 
 import { readFileSync } from 'node:fs';
 
+export type HookEventName = 'SessionStart' | 'UserPromptSubmit';
+
 export interface HookArgs {
   sessionId: string;
   cwd: string;
-  reason: 'auto' | 'manual' | 'fork';
+  // 'SessionStart' (fresh session) or 'UserPromptSubmit' (any prompt,
+  // including the first prompt of a resumed session). Defaults to
+  // 'SessionStart' when stdin/CLI omits it — preserves backward-compat
+  // with older invocations that didn't carry the event name.
+  hookEventName: HookEventName;
   source?: string;
   transcriptPath?: string;
-  // Session-level context shipped in the SessionStart stdin payload, captured
-  // verbatim onto the snapshot blob (spec/format.md §2.1). Both are optional —
-  // older hosts and the CLI testing path won't supply them.
+  // Session-level context shipped in the hook stdin payload, captured
+  // verbatim onto the snapshot blob (spec/format.md §2.1). All optional.
   model?: string;
   permissionMode?: string;
   dryRun: boolean;
@@ -39,7 +44,7 @@ export class HookArgsError extends Error {}
 interface RawInputs {
   sessionId?: string;
   cwd?: string;
-  reason?: 'auto' | 'manual' | 'fork';
+  hookEventName?: HookEventName;
   source?: string;
   transcriptPath?: string;
   model?: string;
@@ -63,7 +68,7 @@ export function parseHookArgs(argv: string[]): HookArgs {
   // Merge — stdin > cli > env, field-by-field.
   const merged: RawInputs = {};
   for (const key of [
-    'sessionId', 'cwd', 'reason', 'source', 'transcriptPath',
+    'sessionId', 'cwd', 'hookEventName', 'source', 'transcriptPath',
     'model', 'permissionMode', 'dryRun',
   ] as const) {
     if (stdin[key] !== undefined) (merged as Record<string, unknown>)[key] = stdin[key];
@@ -84,7 +89,7 @@ export function parseHookArgs(argv: string[]): HookArgs {
   const out: HookArgs = {
     sessionId: merged.sessionId,
     cwd: merged.cwd,
-    reason: merged.reason ?? 'auto',
+    hookEventName: merged.hookEventName ?? 'SessionStart',
     dryRun: merged.dryRun ?? false,
   };
   if (merged.source !== undefined) out.source = merged.source;
@@ -121,12 +126,17 @@ function readStdinJsonOrEmpty(): RawInputs {
   const out: RawInputs = {};
   if (typeof obj['session_id'] === 'string') out.sessionId = obj['session_id'];
   if (typeof obj['cwd'] === 'string') out.cwd = obj['cwd'];
-  if (typeof obj['source'] === 'string') {
-    out.source = obj['source'];
-    // Map Claude Code's source → our reason. startup/resume/clear/compact → 'auto';
-    // anything else stays 'auto' (we treat all as auto-snapshots).
-    out.reason = 'auto';
+  if (typeof obj['hook_event_name'] === 'string') {
+    const hen = obj['hook_event_name'];
+    if (hen === 'SessionStart' || hen === 'UserPromptSubmit') {
+      out.hookEventName = hen;
+    }
+    // Other event names (PreCompact, SessionEnd, ConfigChange) are
+    // observed-and-ignored in v0.2 — fall through to the default
+    // ('SessionStart') so the hook still records something useful if
+    // a host fires an event we don't yet specifically handle.
   }
+  if (typeof obj['source'] === 'string') out.source = obj['source'];
   if (typeof obj['transcript_path'] === 'string') out.transcriptPath = obj['transcript_path'];
   if (typeof obj['model'] === 'string') out.model = obj['model'];
   if (typeof obj['permission_mode'] === 'string') out.permissionMode = obj['permission_mode'];
@@ -148,10 +158,15 @@ function parseCli(argv: string[]): RawInputs {
         if (v !== undefined) out.cwd = v;
         break;
       }
-      case '--reason': {
+      case '--hook-event-name': {
         const v = argv[++i];
-        if (v === 'auto' || v === 'manual' || v === 'fork') out.reason = v;
-        else throw new HookArgsError(`--reason must be auto|manual|fork (got: ${v})`);
+        if (v === 'SessionStart' || v === 'UserPromptSubmit') out.hookEventName = v;
+        else throw new HookArgsError(`--hook-event-name must be SessionStart|UserPromptSubmit (got: ${v})`);
+        break;
+      }
+      case '--reason': {
+        // Accept-and-ignore for back-compat with v0.1 invocations.
+        argv[++i];
         break;
       }
       case '--dry-run':

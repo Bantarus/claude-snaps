@@ -29,6 +29,8 @@ export {
 
 export { canonicalize, canonicalBytes, snapshotId } from './canonical.js';
 
+export { captureCurrentState, captureCurrentStateFast } from './capture.js';
+
 export { Repo } from './repo.js';
 export type { RepoInitOptions } from './repo.js';
 

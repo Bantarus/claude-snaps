@@ -11,15 +11,17 @@ import type { Attribution, AttributionEventKind, Snapshot, SnapshotKind } from '
 // runtime; we do NOT inline it as a TS string. Inlining would create
 // two sources of truth that drift.
 
-// On open we apply 001 then 002 (idempotent) so the runtime schema is
-// always v2: snapshots table without session_id, kind CHECK
-// init|manual|tag, attributions table available. Step 4 (Repo API
-// rework) fills attribution writes; step 6 ships `harness migrate`
-// which performs the data-layer migration (blob re-canonicalize +
-// dedup) for v0.1.x repos in the wild.
-const SCHEMA_FILENAME_V1 = '001_init.sql';
-const SCHEMA_FILENAME_V2 = '002_v0_2_decoupling.sql';
-const CURRENT_SCHEMA_VERSION = 2;
+// On open we apply 001, 002, then 003 in order so the runtime schema
+// is always v3: snapshots without session_id, kind CHECK
+// init|manual|tag, attributions table available, session_observation_
+// cache table available for the hook's hot-path. Each migration is
+// idempotent through the version-gate in ensureSchema().
+const SCHEMA_FILES: Array<{ from: number; file: string; to: number }> = [
+  { from: 0, file: '001_init.sql',                  to: 1 },
+  { from: 1, file: '002_v0_2_decoupling.sql',       to: 2 },
+  { from: 2, file: '003_session_observation_cache.sql', to: 3 },
+];
+const CURRENT_SCHEMA_VERSION = 3;
 const HARNESS_FORMAT_VERSION = '0.2';
 const WRITER_NAME = '@harness/core@0.2.0';
 
@@ -239,6 +241,41 @@ export class IndexDb {
     }));
   }
 
+  // ── session_observation_cache (hot-path; not normative) ─────────────
+
+  /**
+   * Read the last cached observation result for a session. Returns null
+   * when there's no cache entry (first fire of the session, or cache
+   * was cleared). Implementation-internal — the cache is never the
+   * authoritative source; treat null as "must re-observe."
+   */
+  readObservationCache(sessionId: string): { fastHash: string; snapshotId: string } | null {
+    const row = this.db
+      .prepare(
+        'SELECT fast_hash, snapshot_id FROM session_observation_cache WHERE session_id = ?',
+      )
+      .get(sessionId) as { fast_hash: string; snapshot_id: string } | undefined;
+    if (!row) return null;
+    return { fastHash: row.fast_hash, snapshotId: row.snapshot_id };
+  }
+
+  /**
+   * Write/replace the per-session cache entry. Must be called AFTER
+   * the attribution row is committed (the cache write is best-effort
+   * cleanup; if it fails or the process crashes between attribution
+   * and cache write, the next fire safely full-captures). Do NOT wrap
+   * this in the same transaction as the attribution insert.
+   */
+  writeObservationCache(sessionId: string, fastHash: string, snapshotId: string): void {
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO session_observation_cache
+           (session_id, fast_hash, snapshot_id, written_at)
+         VALUES (?, ?, ?, ?)`,
+      )
+      .run(sessionId, fastHash, snapshotId, new Date().toISOString());
+  }
+
   /**
    * Walk `<harnessDir>/snapshots/`, sync the index with what's on disk.
    * Idempotent: running twice on an unchanged tree produces the same
@@ -354,34 +391,37 @@ function ensureSchema(db: DatabaseSync): void {
     )
     .get();
 
+  let have = 0;
+  if (present) {
+    const row = db.prepare('SELECT version FROM _schema').get() as
+      | { version: number }
+      | undefined;
+    have = row?.version ?? 0;
+  }
+
+  // Apply each migration whose `from` matches our current version. The
+  // table-of-migrations approach makes adding the next one a one-line
+  // entry; no special-cases per version.
+  for (const m of SCHEMA_FILES) {
+    if (have === m.from) {
+      db.exec(readSchemaSql(m.file));
+      have = m.to;
+    }
+  }
+
   if (!present) {
-    // Fresh DB: apply 001 then 002 in order. 002 reshapes the v1 layout
-    // (drop session_id, broaden kind CHECK, add attributions table).
-    db.exec(readSchemaSql(SCHEMA_FILENAME_V1));
-    db.exec(readSchemaSql(SCHEMA_FILENAME_V2));
+    // Fresh DB also gets _meta stamped.
     const stamp = db.prepare(
       'INSERT OR REPLACE INTO _meta (key, value) VALUES (?, ?)',
     );
     stamp.run('format_version', HARNESS_FORMAT_VERSION);
     stamp.run('created_by', WRITER_NAME);
     stamp.run('created_at', new Date().toISOString());
-    return;
   }
 
-  const row = db.prepare('SELECT version FROM _schema').get() as
-    | { version: number }
-    | undefined;
-  const have = row?.version ?? 0;
-  if (have === 1) {
-    // Existing v0.1.x DB: apply 002 to bring it to v2. The data-layer
-    // migration (blob re-canonicalize + dedup) is `harness migrate`,
-    // landed in step 6; this only reshapes the schema.
-    db.exec(readSchemaSql(SCHEMA_FILENAME_V2));
-    return;
-  }
   if (have !== CURRENT_SCHEMA_VERSION) {
     throw new IntegrityError(
-      `schema version mismatch: expected ${CURRENT_SCHEMA_VERSION}, got ${have}`,
+      `schema version mismatch after migration: expected ${CURRENT_SCHEMA_VERSION}, got ${have}`,
     );
   }
 }
