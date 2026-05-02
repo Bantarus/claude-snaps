@@ -71,7 +71,7 @@ type the prompt, exit. The hook fires on session start and snapshots.
 | 07 | noop on main | `harness checkout main`, no mutations, fire claude, mid-session `/clear` | no-change diff (the "boring floor"); /clear behavior probe |
 | 08 | remove-skill | delete the skill from session 02 | removal in diff (-skill) |
 | 09 | bulk-add | add 2 skills + 1 output-style + 1 command in one go | upper-end diff readability; module count growth |
-| 10 | tag-v0.2 + final reflection | `harness tag v0.2`, then run TUI / harness log / harness diff to inspect | the "stranger reading the lineage" test |
+| 10 | tag-v0.2 + final reflection | `harness tag v0.2`, then run `harness log` / `harness sessions` / `harness diff` to inspect | the "stranger reading the lineage" test |
 
 Sessions 5, 7, and 10 are the ones the architect's questions hinge on:
 multi-add (informative diff?), no-change (empty diff?), final read (does
@@ -147,13 +147,13 @@ While you run the soak, keep a side notes file. Some prompts:
   the answer. The CONTRIBUTING.md JSONL hook-audit recipe is the
   surgical instrument for this.
 
-- **TUI ergonomics.** Open `pnpm --filter @harness/tui dev` from the
-  monorepo (against $SOAK_DIR — the cli walks up to find the
-  nearest .harness/, but you'll need to launch the TUI from inside
-  the soak dir or pass cwd). Navigate around. Note specifically:
-  the lineage view's readability with 10 snapshots, the diff
-  rendering with multi-change deltas, whether anything jitters or
-  flickers, whether `R` works after an hour of being open.
+- **CLI ergonomics.** From $SOAK_DIR run `harness log`,
+  `harness log --with-sessions`, `harness sessions`,
+  `harness sessions <id>`, and `harness diff <a> <b>` against various
+  snapshots. Note specifically: log readability with 10 snapshots,
+  whether trajectory output for a multi-fire session reads as a
+  coherent story or as noise, and how the dedup behavior surfaces
+  when several sessions share a composition.
 
 - **anything you reach for that doesn't exist.** This is the most
   valuable observation. Three days of unfiltered "I wish I could…"

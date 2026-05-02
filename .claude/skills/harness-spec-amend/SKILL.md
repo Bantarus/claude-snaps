@@ -166,7 +166,7 @@ pnpm --filter @harness/core test           # gate 4: 100+ tests
 pnpm --filter @harness/cli  test           # gate 5
 pnpm --filter @harness/hook test           # gate 6
 pnpm --filter @harness/cli exec vitest run test/e2e.test.ts   # gate 7
-pnpm --filter @harness/tui  test           # gate 8/9 since C
+# gate 8/9 (TUI tests) removed — TUI was dropped from scope; CLI is the only consumer.
 ```
 
 ### 8. Update memory if the rule is load-bearing

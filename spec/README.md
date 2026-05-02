@@ -174,7 +174,7 @@ prevent.
 
 ## What this spec is NOT
 
-- It is not an implementation, library, CLI, or TUI. Those consume the
+- It is not an implementation, library, or CLI. Those consume the
   format.
 - It does not specify multi-machine sync or team merge semantics beyond
   the `[gitignore].policy` knob in `config`. Those are v0.2.

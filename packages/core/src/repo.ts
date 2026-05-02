@@ -44,7 +44,7 @@ export interface RepoInitOptions {
 
 /**
  * High-level facade. Composes blob/refs/dag/index_db/capture/diff for
- * CLI/TUI/hook consumers. Holds an open SQLite handle — call close().
+ * CLI/hook consumers. Holds an open SQLite handle — call close().
  */
 export class Repo {
   private constructor(
