@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { IntegrityError } from './errors.js';
 import type { Snapshot } from './types.js';
 
-// Canonical JSON per spec/format.md §3.1. The implementation rules
+// Canonical JSON per spec/format.md §3.2. The implementation rules
 // (verbatim from the spec):
 //   1. Sort object keys at every depth via Object.keys(o).sort() —
 //      do NOT depend on V8 insertion order.
@@ -10,8 +10,10 @@ import type { Snapshot } from './types.js';
 //   3. UTF-8 via TextEncoder (not Buffer — semantics drift across runtimes).
 //   4. Numbers: integer-only in v0.2 examples. Non-integer throws
 //      IntegrityError; RFC 8785 number canonicalization is v0.3.
-//   5. The `id` field MUST be removed before hashing — destructure,
-//      do not mutate.
+//   5. Fields enumerated in spec/format.md §3.1 are removed before
+//      hashing — destructure, do not mutate. The exclusion list is the
+//      composition-defining vs. observation-context split: composition
+//      participates in id derivation, observation context does not.
 //   6. The 40-char id is the lowercase hex prefix of the full sha256.
 
 const ENCODER = new TextEncoder();
@@ -48,23 +50,28 @@ export function canonicalBytes(value: unknown): Uint8Array {
   return ENCODER.encode(JSON.stringify(sorted));
 }
 
-// (no other v0.2.0 changes to this module: `id` remains the only
-// field stripped before hashing; `sessionId` is no longer emitted by
-// the writer in the first place — see types.ts.)
+// Fields excluded from canonical bytes per spec/format.md §3.1.
+// These are observation context (when/where/how this fire happened),
+// not composition (what the harness was at this moment). Stripping
+// them ensures two observations of identical composition produce the
+// same snapshot id — the load-bearing invariant for trajectory queries
+// in §2.7.
+const EXCLUDED_FIELDS = ['id', 'createdAt', 'codePin', 'model', 'permissionMode'] as const;
 
 /**
- * Compute the snapshot id: sha256(canonicalBytes(snap \ 'id'))[:40],
- * lowercase hex.
+ * Compute the snapshot id: sha256(canonicalBytes(snap \ EXCLUDED_FIELDS))[:40],
+ * lowercase hex. EXCLUDED_FIELDS = id, createdAt, codePin, model,
+ * permissionMode (spec/format.md §3.1).
  *
- * Accepts a Snapshot with or without `id`; the `id` field is destructured
+ * Accepts a Snapshot with or without those fields; they are destructured
  * out before hashing so the input is never mutated.
  *
  * @throws {IntegrityError} on non-integer numeric values inside the blob.
  */
 export function snapshotId(snapshot: Snapshot | Omit<Snapshot, 'id'>): string {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { id: _omit, ...rest } = snapshot as Snapshot;
-  const bytes = canonicalBytes(rest);
+  const stripped: Record<string, unknown> = { ...(snapshot as Record<string, unknown>) };
+  for (const key of EXCLUDED_FIELDS) delete stripped[key];
+  const bytes = canonicalBytes(stripped);
   const digest = createHash('sha256').update(bytes).digest('hex');
   return digest.slice(0, 40);
 }

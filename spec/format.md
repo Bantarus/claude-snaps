@@ -364,7 +364,7 @@ table, added in migration `002_v0_2_decoupling.sql` — see §5.4).
 |---|---|
 | `session_start` | Recorded when the SessionStart hook fired (fresh sessions only — resumed sessions skip this event). |
 | `user_prompt` | Recorded when the UserPromptSubmit hook fired. The dominant event kind in normal use. |
-| `manual_snap` | Recorded when the user ran `harness snap [-m <message>]`. The `sessionId` is the literal string `"<manual>"` to distinguish from runtime sessions. |
+| `manual_snap` | Recorded when the user ran `harness snap [-m <message>]`. The `sessionId` is the literal string `"<manual>"` to distinguish from runtime sessions. If `-m` was supplied, the new snapshot's `message` field carries it; per §3.1 the message participates in canonical bytes, so a manual snap with a unique message always produces a new snapshot id distinct from any existing one — even when modules are unchanged. A manual snap WITHOUT `-m` against an unchanged composition follows the no-change path: attribution only, no new blob. |
 | `migrated` | Recorded by `harness migrate` when backfilling attribution data from a v0.1.x snapshot's `sessionId` field (§9.5). |
 
 Forward-compat rule: unknown `eventKind` values MUST be preserved on
@@ -404,14 +404,58 @@ id = sha256(canonical_bytes(snapshot_for_hashing))[:40]
 
 Where:
 
-- `snapshot_for_hashing` is the snapshot JSON object **with the `id` field
-  removed** (a structure cannot contain its own hash).
-- `canonical_bytes(obj)` is the canonical JSON serialization defined below.
+- `snapshot_for_hashing` is the snapshot JSON object with **the fields
+  enumerated in §3.1 removed** before serialization.
+- `canonical_bytes(obj)` is the canonical JSON serialization defined in §3.2.
 - The result of `sha256` is the 64-char lowercase hex digest. The first 40
   characters become `id`. Rationale: matches git's display length; collision
   resistance from sha256 is overkill but matches developer expectations.
 
-### 3.1 Canonical JSON
+### 3.1 Excluded fields
+
+The following snapshot fields are deliberately excluded from canonical
+bytes (i.e. removed from `snapshot_for_hashing` before serialization):
+
+| Field | Reason |
+|---|---|
+| `id` | Recursion — the field being computed. |
+| `createdAt` | Observation timestamp; varies per observation of the same harness. |
+| `codePin` | Project's git sha at observation time; varies independently of harness composition. |
+| `model` | Claude Code invocation context; not part of the captured `.claude/` state. |
+| `permissionMode` | Claude Code invocation context; not part of the captured `.claude/` state. |
+
+All other fields participate in canonical bytes derivation, including:
+
+- `modules` — obviously.
+- `kind`, `parentIds`, `branch` — structural identity in the DAG. Two
+  observations of identical modules on different branches (or with
+  different parents) produce different snapshots: the trajectory query
+  in §2.7 needs to distinguish them, since reproducing each requires
+  checking out different lineage. Stripping these would collapse the
+  DAG into a content graph — a weaker structure than what the spec
+  describes.
+- `version` — only present on `tag` snapshots; structural.
+- `message` — when set on a `manual` snapshot, a user-supplied message
+  is the *reason* this snapshot exists distinct from a no-change
+  observation. Two manual captures of identical composition with
+  different messages MUST produce different snapshots; the message is
+  the user's annotation of "this moment is meaningful."
+- `apmLockHash` — structural despite being a hash itself. APM-source
+  modules' identities depend on the lockfile bytes; two snapshots with
+  the same `modules` array but different `apmLockHash` mean a module's
+  resolved commit changed under the same path. Deduping them would be
+  wrong.
+- `formatVersion`, `author` — additive metadata; preserved on
+  round-trip per §9.2 and participate in identity.
+
+The dedup rule that emerges: **same `(modules, kind, parentIds, branch,
+version, message, apmLockHash, formatVersion, author)` produces the
+same snapshot id**. Two `observe()` calls (§2.7) against an unchanged
+composition with no new message therefore append attribution events
+referencing the existing snapshot, never write a new blob, and never
+advance any ref.
+
+### 3.2 Canonical JSON
 
 The serialization `canonical_bytes` is a strict subset of
 [RFC 8785 (JCS)](https://datatracker.ietf.org/doc/html/rfc8785) sufficient for
@@ -440,12 +484,13 @@ the snapshot domain:
 
 A conforming implementation MUST produce byte-identical canonical bytes for
 inputs that differ only in whitespace, key order, or JSON formatting. The
-test vector in §3.2 is the conformance touchstone.
+test vector in §3.3 is the conformance touchstone.
 
-### 3.2 Test vector
+### 3.3 Test vector
 
-The following snapshot (with `id` omitted) hashes to the indicated value.
-Implementations MUST reproduce the canonical bytes and the digest exactly.
+The following snapshot (with the §3.1 excluded fields stripped) hashes
+to the indicated value. Implementations MUST reproduce the canonical
+bytes and the digest exactly.
 
 **Input (snapshot blob with `id` omitted, shown pretty-printed for readability):**
 
@@ -477,21 +522,23 @@ Implementations MUST reproduce the canonical bytes and the digest exactly.
 }
 ```
 
-**Canonical bytes (UTF-8, 503 bytes, exactly):**
+**Canonical bytes (UTF-8, 411 bytes, exactly).** Note: `createdAt` and
+`codePin` from the input above are absent here — they are stripped per
+§3.1.
 
 ```
-{"apmLockHash":null,"branch":"main","codePin":"b22e80aa12cc34dd56ee78ff90aabbccddeeff00","createdAt":"2026-04-29T18:20:00.000Z","formatVersion":"0.2","kind":"manual","message":"+ postgres MCP","modules":[{"enabled":true,"name":"senior-eng","source":{"kind":"local","path":".claude/agents/senior-eng.md"},"type":"chatmode"},{"enabled":true,"name":"postgres","source":{"kind":"local","path":".claude/settings.json"},"type":"mcp","version":"v0.9"}],"parentIds":["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]}
+{"apmLockHash":null,"branch":"main","formatVersion":"0.2","kind":"manual","message":"+ postgres MCP","modules":[{"enabled":true,"name":"senior-eng","source":{"kind":"local","path":".claude/agents/senior-eng.md"},"type":"chatmode"},{"enabled":true,"name":"postgres","source":{"kind":"local","path":".claude/settings.json"},"type":"mcp","version":"v0.9"}],"parentIds":["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]}
 ```
 
-**Full sha256:** `2f9993556a22abc7f52e5af006affd1e76a2c5b73bb403debe3e070325b9d4a2`
+**Full sha256:** `cc645898beca440be69ed860eca4a2b24e25f29c4369f75c48f00d69d03de89d`
 
-**`id` (first 40 chars):** `2f9993556a22abc7f52e5af006affd1e76a2c5b7`
+**`id` (first 40 chars):** `cc645898beca440be69ed860eca4a2b24e25f29c`
 
 The fixture filename `canonical-501.bin` is historical (the v0.1.x
-fixture was 501 bytes); the v0.2.0 fixture under that filename is 503
-bytes. See [spec/test-vectors/README.md](test-vectors/README.md) for
-the rationale and for the preserved v0.1.1 fixture used by migration
-tests.
+fixture was 501 bytes); the v0.2.0 fixture under that filename is 411
+bytes after the §3.1 strip. See [spec/test-vectors/README.md](test-vectors/README.md)
+for the rationale and for the preserved v0.1.1 fixture used by
+migration tests.
 
 The reference generator in [scripts/build_examples.py](../scripts/build_examples.py)
 emits this vector at the end of its run. Implementations under test SHOULD

@@ -38,15 +38,26 @@ const TV_INPUT: Omit<Snapshot, 'id'> = {
 };
 
 // v0.2.0 fixture digest. Filename `canonical-501.bin` is historical
-// (the v0.1.1 fixture was 501 bytes); the v0.2.0 fixture is 503 bytes.
-const FIXTURE_DIGEST = '2f9993556a22abc7f52e5af006affd1e76a2c5b73bb403debe3e070325b9d4a2';
-const FIXTURE_ID = '2f9993556a22abc7f52e5af006affd1e76a2c5b7';
-const FIXTURE_BYTE_LENGTH = 503;
+// (the v0.1.1 fixture was 501 bytes); the v0.2.0 fixture is 411 bytes
+// — sessionId was dropped and §3.1 strips createdAt/codePin/model/
+// permissionMode from canonical bytes.
+const FIXTURE_DIGEST = 'cc645898beca440be69ed860eca4a2b24e25f29c4369f75c48f00d69d03de89d';
+const FIXTURE_ID = 'cc645898beca440be69ed860eca4a2b24e25f29c';
+const FIXTURE_BYTE_LENGTH = 411;
+
+// Fields stripped from canonical bytes per spec/format.md §3.1.
+const EXCLUDED_FIELDS = ['id', 'createdAt', 'codePin', 'model', 'permissionMode'] as const;
+
+function stripExcluded<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  const out: Record<string, unknown> = { ...obj };
+  for (const k of EXCLUDED_FIELDS) delete out[k];
+  return out as Partial<T>;
+}
 
 describe('canonical fixture (Gate 1)', () => {
-  test('canonicalBytes(TV_INPUT) is byte-identical to spec/test-vectors/canonical-501.bin', () => {
+  test('canonicalBytes of TV_INPUT (post §3.1 strip) is byte-identical to canonical-501.bin', () => {
     const expected = readFileSync(resolve(SPEC_DIR, 'test-vectors/canonical-501.bin'));
-    const actual = canonicalBytes(TV_INPUT);
+    const actual = canonicalBytes(stripExcluded(TV_INPUT as Record<string, unknown>));
     expect(actual.byteLength).toBe(FIXTURE_BYTE_LENGTH);
     expect(actual.byteLength).toBe(expected.byteLength);
     expect(Buffer.from(actual).equals(expected)).toBe(true);

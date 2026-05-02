@@ -110,7 +110,7 @@ describe('IndexDb.reindex', () => {
       .prepare(
         'SELECT COUNT(*) AS n FROM snapshot_parents WHERE child_id = ?',
       )
-      .get('641137a06e841d897aeedd11133f40b041f6ab99') as { n: number };
+      .get('f38fafd22e99266348b486a48175c7774746b1a4') as { n: number };
     expect(row.n).toBe(2);
     // x-* extension survived the source_kind CHECK constraint.
     const xCount = db
@@ -138,7 +138,7 @@ describe('IndexDb queries', () => {
     const dir = copyExample('team-shared');
     const idx = IndexDb.open(dir);
     idx.reindex();
-    const snap = idx.getSnapshot('aa42cc7c5c010c2733f1f8eae770d9765c4efb08');
+    const snap = idx.getSnapshot('0ab4f7c92c551342fb585c709dc6e5c2bbb71c89');
     expect(snap).not.toBeNull();
     expect(snap!.kind).toBe('tag');
     expect(snap!.version).toBe('v0.4');

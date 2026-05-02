@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { apmLockHash as apmLockHashOf } from './apm.js';
+import { canonicalize } from './canonical.js';
 import {
   ancestorsOf,
   isAncestor as dagIsAncestor,
@@ -10,11 +11,11 @@ import {
 import { diff as moduleDiff } from './diff.js';
 import { listSnapshots, readSnapshot, writeSnapshot } from './blob.js';
 import { captureCurrentState } from './capture.js';
-import { EmptyRepositoryError, IntegrityError, IoError } from './errors.js';
+import { EmptyRepositoryError, IntegrityError, InvalidStateError, IoError } from './errors.js';
 import { IndexDb, type ListSnapshotsFilter, type ReindexResult } from './index_db.js';
 import { listRefs, readHead, readRef, resolveHead, writeRef } from './refs.js';
 import type {
-  DiffOp, HeadState, Module, Snapshot,
+  Attribution, AttributionEventKind, DiffOp, HeadState, Module, Snapshot,
 } from './types.js';
 
 const DEFAULT_BRANCH = 'main';
@@ -22,7 +23,7 @@ const DEFAULT_CONFIG_TOML = `# .harness/config — TOML. See spec/format.md §7.
 
 [core]
 default_branch = "main"
-format_version = "0.1"
+format_version = "0.2"
 
 [capture]
 auto_snapshot_on_session = true
@@ -141,6 +142,10 @@ export class Repo {
    * except `id`, which is computed from the canonical bytes. Does NOT
    * advance any branch ref — that's a separate, deliberate step
    * (`setBranch(name, returnedId)`).
+   *
+   * @internal — new consumers SHOULD use `observe()` (the v0.2.0
+   * decoupled API). This method stays exported for migration tooling
+   * and direct CLI commands that mint specific snapshot kinds (`tag`).
    */
   writeSnapshot(snap: Snapshot | Omit<Snapshot, 'id'>): Snapshot {
     const written = writeSnapshot(this.harnessDir, snap);
@@ -201,11 +206,124 @@ export class Repo {
     return captureCurrentState(this.projectRoot);
   }
 
-  // ── hook helpers ─────────────────────────────────────────────────────
+  // ── observe / attribution (v0.2.0 — spec/format.md §2.7) ─────────────
 
-  // findSnapshotBySessionId removed in v0.2.0: snapshots no longer carry
-  // a sessionId. Idempotency is now per (sessionId, observedAt, eventKind)
-  // on the attributions table — see step 4 (observe()).
+  /**
+   * Capture the current `.claude/` composition and record an
+   * attribution event. The load-bearing v0.2.0 write API.
+   *
+   * If the captured composition matches an existing snapshot on the
+   * current branch, no new snapshot blob is written; only the
+   * attribution row is appended. Otherwise: writes a new `manual`-kind
+   * snapshot (or `init` on the empty-repo first fire), advances the
+   * current branch ref to its id, then appends the attribution.
+   *
+   * Returns the snapshot id the attribution points at (existing or new).
+   *
+   * Idempotent on the (sessionId, observedAt, eventKind) primary key
+   * of the attributions table — a duplicate fire is silently dropped.
+   *
+   * @throws {InvalidStateError} if HEAD is detached. The hook always
+   * operates on a branch; `harness checkout <id>` puts the repo into
+   * detached state and observe() refuses to write under that condition.
+   */
+  observe(event: {
+    sessionId: string;
+    eventKind: AttributionEventKind;
+    source?: string | null;
+    /** Used only when a NEW snapshot is written. Persisted as snap.message. */
+    message?: string | null;
+    /** Optional pass-through onto a newly-written snapshot. */
+    model?: string;
+    permissionMode?: string;
+    /**
+     * Override createdAt / observedAt. Defaults to now. Tests use this
+     * for deterministic timestamps; the hook should leave it unset.
+     */
+    now?: string;
+  }): string {
+    const observedAt = event.now ?? new Date().toISOString();
+
+    const head = this.head();
+    if (head !== null && head.type === 'detached') {
+      throw new InvalidStateError(
+        'observe() refuses to write on a detached HEAD; check out a branch first',
+      );
+    }
+    const branchName = this.currentBranchName() ?? DEFAULT_BRANCH;
+    const headId = this.resolveHead();
+    const message = event.message ?? null;
+    const modules = this.workingTree();
+    const apmLockHash = this.apmLockHash();
+
+    // No-change path: head exists, no user message, and the live
+    // composition matches the head snapshot. Append attribution only;
+    // do NOT advance the branch ref. A user-supplied message ALWAYS
+    // forces a new snapshot — the message participates in canonical
+    // bytes (§3.1), so a messaged capture is a distinct snapshot from
+    // a no-message one even with identical modules.
+    if (headId !== null && message === null) {
+      const headSnap = this.snapshot(headId);
+      if (
+        headSnap.apmLockHash === apmLockHash &&
+        modulesEqual(headSnap.modules, modules)
+      ) {
+        this.db.insertAttribution({
+          sessionId: event.sessionId,
+          snapshotId: headId,
+          observedAt,
+          eventKind: event.eventKind,
+          source: event.source ?? null,
+        });
+        return headId;
+      }
+    }
+
+    // Change path: write a new snapshot, advance branch ref, attribute.
+    const baseBlob: Omit<Snapshot, 'id'> = {
+      formatVersion: '0.2',
+      parentIds: headId === null ? [] : [headId],
+      branch: branchName,
+      kind: headId === null ? 'init' : 'manual',
+      message,
+      codePin: this.gitSha(),
+      apmLockHash,
+      createdAt: observedAt,
+      modules,
+    };
+    if (event.model !== undefined) baseBlob.model = event.model;
+    if (event.permissionMode !== undefined) baseBlob.permissionMode = event.permissionMode;
+
+    const written = this.writeSnapshot(baseBlob);
+    if (head === null || head.type === 'symbolic') {
+      this.setBranch(branchName, written.id);
+    }
+    this.db.insertAttribution({
+      sessionId: event.sessionId,
+      snapshotId: written.id,
+      observedAt,
+      eventKind: event.eventKind,
+      source: event.source ?? null,
+    });
+    return written.id;
+  }
+
+  /**
+   * Trajectory of a session: ordered list of attribution events
+   * (sessionId, snapshotId, observedAt, eventKind). Empty if the
+   * session was never observed.
+   */
+  trajectoryOf(sessionId: string): Attribution[] {
+    return this.db.trajectoryOf(sessionId);
+  }
+
+  /**
+   * Sessions that observed a given snapshot, with first/last observation
+   * timestamps. Inverse of trajectoryOf.
+   */
+  sessionsAt(snapshotId: string): Array<{ sessionId: string; firstObservedAt: string; lastObservedAt: string }> {
+    return this.db.sessionsAt(snapshotId);
+  }
 
   /**
    * Current branch name when HEAD is symbolic, null when HEAD is detached
@@ -263,4 +381,13 @@ export class Repo {
       throw new IntegrityError('failed to close index db', cause);
     }
   }
+}
+
+// Module-array structural equality. Used by observe() to decide
+// whether composition changed since the head snapshot. Modules are
+// already in canonical order per spec/hooks.md §2.2, so position-wise
+// canonical-JSON equality is sufficient.
+function modulesEqual(a: Module[], b: Module[]): boolean {
+  if (a.length !== b.length) return false;
+  return JSON.stringify(canonicalize(a)) === JSON.stringify(canonicalize(b));
 }

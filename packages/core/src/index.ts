@@ -11,6 +11,8 @@ export type {
   ModuleType,
   Snapshot,
   SnapshotKind,
+  Attribution,
+  AttributionEventKind,
   DiffOp,
   HeadState,
 } from './types.js';

@@ -16,7 +16,7 @@ describe('readHead / resolveHead', () => {
   test('symbolic ref to existing branch resolves to id', () => {
     const head = readHead(TEAM);
     expect(head).toEqual({ type: 'symbolic', ref: 'refs/heads/main' });
-    expect(resolveHead(TEAM)).toBe('aa42cc7c5c010c2733f1f8eae770d9765c4efb08');
+    expect(resolveHead(TEAM)).toBe('0ab4f7c92c551342fb585c709dc6e5c2bbb71c89');
   });
 
   test('empty repo: HEAD is symbolic, resolveHead returns null (spec §4.4)', () => {
@@ -31,22 +31,22 @@ describe('readHead / resolveHead', () => {
 
 describe('readRef / listRefs', () => {
   test('reads team-shared refs/heads/main', () => {
-    expect(readRef(TEAM, 'heads/main')).toBe('aa42cc7c5c010c2733f1f8eae770d9765c4efb08');
+    expect(readRef(TEAM, 'heads/main')).toBe('0ab4f7c92c551342fb585c709dc6e5c2bbb71c89');
   });
 
   test('reads team-shared refs/tags/v0.4', () => {
-    expect(readRef(TEAM, 'tags/v0.4')).toBe('aa42cc7c5c010c2733f1f8eae770d9765c4efb08');
+    expect(readRef(TEAM, 'tags/v0.4')).toBe('0ab4f7c92c551342fb585c709dc6e5c2bbb71c89');
   });
 
   test('listRefs heads returns 2 refs for team-shared', () => {
     const heads = listRefs(TEAM, 'heads/');
     expect(Object.keys(heads).sort()).toEqual(['experimental', 'main']);
-    expect(heads.experimental).toBe('4eb2c0749aeb89e12836f37f04c4e875ecb94eb0');
+    expect(heads.experimental).toBe('50f074787cd86a84dee47859ed631dcd2fd70019');
   });
 
   test('listRefs tags returns v0.2 for solo-no-apm', () => {
     expect(listRefs(SOLO_NO_APM, 'tags/')).toEqual({
-      'v0.2': 'ceabed2896c587ad32d3570e362cda2a313f00c0',
+      'v0.2': 'b456f1a0ece11dc2e70e9f75e19b9f93b257e29c',
     });
   });
 

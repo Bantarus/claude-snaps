@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { listSnapshots, readSnapshot } from './blob.js';
 import { IntegrityError, IoError, ParseError } from './errors.js';
-import type { Snapshot, SnapshotKind } from './types.js';
+import type { Attribution, AttributionEventKind, Snapshot, SnapshotKind } from './types.js';
 
 // Per spec/format.md §5.2 the schema file is canonical — implementations
 // MUST execute it verbatim. We read it from spec/schema/001_init.sql at
@@ -171,6 +171,72 @@ export class IndexDb {
     }
     const rows = this.db.prepare(sql).all(...args) as unknown as SnapshotRow[];
     return rows.map((r) => this.hydrate(r));
+  }
+
+  // ── attribution events (v0.2.0; spec/format.md §2.7, §5.4) ────────────
+
+  /**
+   * Append an attribution event row. Idempotent: a primary-key
+   * collision on (session_id, observed_at, event_kind) is treated as a
+   * successful no-op (the event was already recorded, retry is harmless).
+   *
+   * Throws if `snapshotId` doesn't reference an existing snapshot row —
+   * the FK enforces this at SQLite level.
+   */
+  insertAttribution(attr: Attribution): void {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO attributions
+           (session_id, snapshot_id, observed_at, event_kind, source)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        attr.sessionId, attr.snapshotId, attr.observedAt,
+        attr.eventKind, attr.source,
+      );
+  }
+
+  /**
+   * Trajectory of a session: ordered list of attribution events.
+   * Returns empty array if the session has no recorded events.
+   */
+  trajectoryOf(sessionId: string): Attribution[] {
+    const rows = this.db
+      .prepare(
+        `SELECT session_id, snapshot_id, observed_at, event_kind, source
+           FROM attributions
+          WHERE session_id = ?
+          ORDER BY observed_at, event_kind`,
+      )
+      .all(sessionId) as unknown as AttributionRow[];
+    return rows.map((r) => ({
+      sessionId: r.session_id,
+      snapshotId: r.snapshot_id,
+      observedAt: r.observed_at,
+      eventKind: r.event_kind as AttributionEventKind,
+      source: r.source,
+    }));
+  }
+
+  /**
+   * Inverse of trajectoryOf: which sessions observed this snapshot,
+   * with their first and last observation timestamps.
+   */
+  sessionsAt(snapshotId: string): Array<{ sessionId: string; firstObservedAt: string; lastObservedAt: string }> {
+    const rows = this.db
+      .prepare(
+        `SELECT session_id, MIN(observed_at) AS first_seen, MAX(observed_at) AS last_seen
+           FROM attributions
+          WHERE snapshot_id = ?
+          GROUP BY session_id
+          ORDER BY first_seen`,
+      )
+      .all(snapshotId) as unknown as { session_id: string; first_seen: string; last_seen: string }[];
+    return rows.map((r) => ({
+      sessionId: r.session_id,
+      firstObservedAt: r.first_seen,
+      lastObservedAt: r.last_seen,
+    }));
   }
 
   /**
@@ -382,6 +448,14 @@ interface SnapshotRow {
   format_version: string;
   model: string | null;
   permission_mode: string | null;
+}
+
+interface AttributionRow {
+  session_id: string;
+  snapshot_id: string;
+  observed_at: string;
+  event_kind: string;
+  source: string | null;
 }
 
 interface ModuleRow {

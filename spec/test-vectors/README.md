@@ -5,27 +5,30 @@ Byte-exact fixtures for cross-language conformance testing.
 ## `canonical-501.bin` (v0.2.0)
 
 The canonical-bytes serialization of the snapshot in
-[../format.md §3.2](../format.md#32-test-vector), with `id` omitted.
-**Filename is historical**: the v0.1.x fixture was 501 bytes, so the
-file was named `canonical-501.bin`. The v0.2.0 fixture is **503 bytes**
-(the `kind` field grew from `"edit"` (4 bytes) to `"manual"` (6 bytes),
-and `sessionId` was dropped). The filename was retained for stability
-across cross-impl tooling that may reference it by name.
+[../format.md §3.3](../format.md#33-test-vector), with the §3.1
+excluded fields stripped. **Filename is historical**: the v0.1.x
+fixture was 501 bytes, so the file was named `canonical-501.bin`. The
+v0.2.0 fixture is **411 bytes** — `sessionId` was removed from the
+blob, and §3.1 strips `createdAt`, `codePin`, `model`, `permissionMode`
+from canonical bytes (composition vs. observation context). The
+filename was retained for stability across cross-impl tooling that
+may reference it by name.
 
 A conforming v0.2.0 implementation MUST satisfy:
 
 ```
 sha256(read_bytes("canonical-501.bin")).hexdigest() ==
-  "2f9993556a22abc7f52e5af006affd1e76a2c5b73bb403debe3e070325b9d4a2"
+  "cc645898beca440be69ed860eca4a2b24e25f29c4369f75c48f00d69d03de89d"
 
 sha256(read_bytes("canonical-501.bin")).hexdigest()[:40] ==
-  "2f9993556a22abc7f52e5af006affd1e76a2c5b7"
+  "cc645898beca440be69ed860eca4a2b24e25f29c"
 ```
 
 …and, given the **input snapshot dict** shown in
-[../format.md §3.2](../format.md#32-test-vector), MUST produce exactly
-those 503 bytes when serialized through the canonicalizer defined in
-[../format.md §3.1](../format.md#31-canonical-json).
+[../format.md §3.3](../format.md#33-test-vector), MUST produce exactly
+those 411 bytes when serialized through the canonicalizer defined in
+[../format.md §3.2](../format.md#32-canonical-json) after stripping
+the §3.1 excluded fields.
 
 The fixture is regenerated automatically by
 [../../scripts/build_examples.py](../../scripts/build_examples.py) — if

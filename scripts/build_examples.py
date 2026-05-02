@@ -31,9 +31,14 @@ EXAMPLES = SPEC_ROOT / "examples"
 # Canonicalization
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Fields excluded from canonical bytes per format.md §3.1. The split is
+# composition (participates in id) vs. observation context (does not).
+EXCLUDED_FIELDS = ("id", "createdAt", "codePin", "model", "permissionMode")
+
+
 def canonical_bytes(obj: dict) -> bytes:
     """
-    Canonical JSON per format.md §3:
+    Canonical JSON per format.md §3.2:
       - UTF-8, no BOM
       - sort_keys recursive
       - no whitespace between tokens
@@ -52,9 +57,15 @@ def canonical_bytes(obj: dict) -> bytes:
     ).encode("utf-8")
 
 
+def _strip_excluded(snapshot: dict) -> dict:
+    """Return a copy with the §3.1 excluded fields removed. The input is
+    not mutated."""
+    return {k: v for k, v in snapshot.items() if k not in EXCLUDED_FIELDS}
+
+
 def derive_id(snapshot_without_id: dict) -> str:
-    """sha256(canonical_bytes)[:40]; lowercase hex."""
-    digest = hashlib.sha256(canonical_bytes(snapshot_without_id)).hexdigest()
+    """sha256(canonical_bytes(snapshot \\ EXCLUDED_FIELDS))[:40]; lowercase hex."""
+    digest = hashlib.sha256(canonical_bytes(_strip_excluded(snapshot_without_id))).hexdigest()
     return digest[:40]
 
 
@@ -775,7 +786,7 @@ TEST_VECTOR_INPUT = {
 
 
 def emit_test_vector_summary() -> None:
-    cb = canonical_bytes(TEST_VECTOR_INPUT)
+    cb = canonical_bytes(_strip_excluded(TEST_VECTOR_INPUT))
     full = hashlib.sha256(cb).hexdigest()
     # Write the byte fixture used by cross-language conformance tests.
     fixture = SPEC_ROOT / "test-vectors" / "canonical-501.bin"
