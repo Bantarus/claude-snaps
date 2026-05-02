@@ -7,6 +7,7 @@ source "$(dirname "$0")/lib.sh"
 require_soak_dir
 say "day 07 — no-op session on main + /clear probe"
 
+cd "$SOAK_DIR"
 "$HARNESS" checkout main 2>&1 | tail -2
 note "checked out main; no .claude/ mutations this day"
 

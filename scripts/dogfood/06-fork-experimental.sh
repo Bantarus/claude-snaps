@@ -7,6 +7,9 @@ source "$(dirname "$0")/lib.sh"
 require_soak_dir
 say "day 06 — fork experimental + diverge"
 
+# Run harness commands from the soak directory.
+cd "$SOAK_DIR"
+
 # Get the v0.1 tag's snapshot id as our fork point.
 FORK_FROM="$("$HARNESS" log 2>/dev/null | grep -E '\bv0\.1\b' | head -1 | awk '{print $1}' || true)"
 if [ -z "$FORK_FROM" ]; then
