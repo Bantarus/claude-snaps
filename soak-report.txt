@@ -1,0 +1,140 @@
+
+========================================
+DOGFOOD SOAK AUDIT
+2026-05-02T07:08:11Z
+soak dir: ~/harness-dogfood-soak
+monorepo: ~/DEV/claude-snaps
+========================================
+
+1) harness log (full DAG, newest first)
+----------------
+2228014a ▶ auto · session 5113ed0d  (main) code:8c42aa9
+e5ebd5ff ▶ auto · session 7092d637  (main) code:8c42aa9
+955a2810 ▶ auto · session 019502eb  (main) code:8c42aa9
+787f33c9 ▶ auto · session 7769e7d5  (experimental) code:8c42aa9
+47591608 ▶ auto · session 6257c408  (experimental) code:8c42aa9
+32333603 ▶ auto · session 3bdd66f1  (experimental) code:8c42aa9
+af1a57d6 ▶ auto · session 3b29a10d  (main) code:8c42aa9
+1d0cab76 ▶ auto · session 5ef5f33c  (main) code:8c42aa9
+6bc28d8f ▶ auto · session 7bb5ac2b  (main) code:8c42aa9
+f16ba71f ▶ auto · session 938cf0b2  (main) code:8c42aa9
+da1272cf ▶ auto · session e52b1067  (main) code:8c42aa9
+4adedb27 ▶ auto · session a5bf975c  (main) code:8c42aa9
+c966d00c ▶ auto · session c6daa3da  (main) code:8c42aa9
+4e8243dd ▶ auto · session 684cfc4f  (main) code:8c42aa9
+33e2acc9 ★ auto · session soak-res  (main) code:8c42aa9
+
+
+2) Branches and tags
+----------------
+  branch: experimental
+  branch: main
+  tag:    v0.1
+  tag:    v0.2
+
+3) Snapshot count by kind
+----------------
+  auto     14
+  init     1
+  total    15
+
+4) Module composition trend (count per snapshot, by source.kind)
+----------------
+  created                  id         kind   branch         msg                              modules                  
+  ------------------------ ---------- ------ -------------- -------------------------------- -------------------------
+  2026-05-02T06:21:02.663Z 33e2acc9   init   main           auto · session soak-res          builtin:11, local:2      
+  2026-05-02T06:27:08.435Z 4e8243dd   auto   main           auto · session 684cfc4f          builtin:11, local:2      
+  2026-05-02T06:28:23.640Z c966d00c   auto   main           auto · session c6daa3da          builtin:11, local:3      
+  2026-05-02T06:29:37.218Z 4adedb27   auto   main           auto · session a5bf975c          builtin:11, local:3      
+  2026-05-02T06:31:00.718Z da1272cf   auto   main           auto · session e52b1067          builtin:11, local:3      
+  2026-05-02T06:33:21.019Z f16ba71f   auto   main           auto · session 938cf0b2          builtin:11, local:3      
+  2026-05-02T06:34:21.257Z 6bc28d8f   auto   main           auto · session 7bb5ac2b          builtin:11, local:3      
+  2026-05-02T06:36:04.208Z 1d0cab76   auto   main           auto · session 5ef5f33c          builtin:11, local:4      
+  2026-05-02T06:37:37.994Z af1a57d6   auto   main           auto · session 3b29a10d          builtin:11, local:7      
+  2026-05-02T06:45:58.604Z 32333603   auto   experimental   auto · session 3bdd66f1          builtin:11, local:7      
+  2026-05-02T06:47:51.723Z 47591608   auto   experimental   auto · session 6257c408          builtin:11, local:7      
+  2026-05-02T06:48:19.520Z 787f33c9   auto   experimental   auto · session 7769e7d5          builtin:11, local:7      
+  2026-05-02T07:01:18.595Z 955a2810   auto   main           auto · session 019502eb          builtin:11, local:6      
+  2026-05-02T07:03:15.091Z e5ebd5ff   auto   main           auto · session 7092d637          builtin:11, local:10     
+  2026-05-02T07:06:50.445Z 2228014a   auto   main           auto · session 5113ed0d          builtin:11, local:10     
+
+5) Worked diffs
+----------------
+
+  diff v0.1 → v0.2 (the meaningful soak delta):
+    af1a57d6..2228014a
+    + ✦ git-explain            (added)
+    + ✦ profile-bench            (added)
+    − ✦ test-runner            (removed)
+    + / /note            (added)
+    + ◇ terse            (added)
+    
+    +4 added  −1 removed  ~0 changed
+
+  diff baseline → latest (full soak delta):
+    33e2acc9..2228014a
+    + ✎ CLAUDE.md            (added)
+    + ◐ code-reviewer            (added)
+    + ✦ git-explain            (added)
+    ~ ✦ notes ? → ?  (changed)
+    + ✦ profile-bench            (added)
+    + / /note            (added)
+    + / /recap            (added)
+    + ⌥ filesystem            (added)
+    + ◇ terse            (added)
+    
+    +8 added  −0 removed  ~1 changed
+
+6) Hook firings (Claude Code JSONL trail)
+----------------
+  jsonl dir: ~/.claude/projects/-home-bantarus-harness-dogfood-soak
+  019502eb  hook firings: 1
+  103caa5b  hook firings: 1
+  104b6f59  hook firings: 1
+  1a3de2d1  hook firings: 1
+  3b29a10d  hook firings: 1
+  3bdd66f1  hook firings: 1
+  4b313d58  hook firings: 1
+  5113ed0d  hook firings: 1
+  5e399035  hook firings: 1
+  5ef5f33c  hook firings: 1
+  6257c408  hook firings: 0
+  684cfc4f  hook firings: 1
+  7092d637  hook firings: 1
+  7769e7d5  hook firings: 0
+  7bb5ac2b  hook firings: 1
+  91c604ee  hook firings: 1
+  938cf0b2  hook firings: 1
+  a5bf975c  hook firings: 1
+  c6daa3da  hook firings: 1
+  e52b1067  hook firings: 1
+
+7) Spec gates (run from monorepo)
+----------------
+
+  schema agreement:
+    
+    All 17 cases agree across SQL CHECK and JSON Schema.
+
+  format-version-bump (vs HEAD):
+    ✓ no spec schema changes detected vs HEAD
+
+  canonical-501 byte-stability:
+    ✓ byte-identical (977d89c4deef44ae18ab764350d01a54357b84ec92d077de2a9a4531c1048e26)
+
+8) Working tree vs git audit
+----------------
+  ✗ ORPHANS FOUND:
+    ./soak-report.txt
+  spec example blobs:  on disk=20 tracked=20 ✓
+
+9) Test gates
+----------------
+  packages/core test:       Tests  94 passed (94)
+  packages/tui test:       Tests  40 passed (40)
+  packages/cli test:       Tests  35 passed (35)
+  packages/hook test:       Tests  18 passed (18)
+
+========================================
+AUDIT END
+========================================
