@@ -55,15 +55,52 @@ for root, _, files in os.walk('.harness/snapshots'):
             for m in blob['modules']:
                 k = m['source']['kind']
                 kinds[k] = kinds.get(k, 0) + 1
+            # v0.2: message is nullable — render '(null)' for hook captures.
+            msg = blob.get('message')
+            msg_text = (msg if isinstance(msg, str) else '(null)')[:30]
             rows.append((blob['createdAt'], blob['id'][:8], blob['kind'], blob['branch'],
-                         blob['message'][:30], kinds))
+                         msg_text, kinds))
 rows.sort()
-print(f'  {"created":<24} {"id":<10} {"kind":<6} {"branch":<14} {"msg":<32} {"modules":<25}')
-print(f'  {"-"*24} {"-"*10} {"-"*6} {"-"*14} {"-"*32} {"-"*25}')
+print(f'  {"created":<24} {"id":<10} {"kind":<8} {"branch":<14} {"msg":<32} {"modules":<25}')
+print(f'  {"-"*24} {"-"*10} {"-"*8} {"-"*14} {"-"*32} {"-"*25}')
 for ts, id8, kind, branch, msg, kinds in rows:
     kstr = ', '.join(f'{k}:{n}' for k, n in sorted(kinds.items()))
-    print(f'  {ts:<24} {id8:<10} {kind:<6} {branch:<14} {msg:<32} {kstr:<25}')
+    print(f'  {ts:<24} {id8:<10} {kind:<8} {branch:<14} {msg:<32} {kstr:<25}')
 PYEOF
+printf '\n'
+
+printf '4b) Attribution events (v0.2)\n----------------\n'
+if [ -f .harness/lineage.sqlite ]; then
+  python3 - <<'PYEOF'
+import sqlite3
+con = sqlite3.connect('.harness/lineage.sqlite')
+# Counts by event kind.
+print('  event_kind        count')
+print('  ' + '-'*24)
+for row in con.execute(
+    "SELECT event_kind, COUNT(*) FROM attributions GROUP BY event_kind ORDER BY event_kind"
+):
+    print(f'  {row[0]:<16}  {row[1]}')
+total = con.execute("SELECT COUNT(*) FROM attributions").fetchone()[0]
+print(f'  {"total":<16}  {total}')
+print()
+# Sessions observed and their trajectory lengths.
+print(f'  {"session_id":<32}  {"events":>6}  {"snapshots":>9}  first_seen')
+print('  ' + '-'*32 + '  ' + '-'*6 + '  ' + '-'*9 + '  ' + '-'*24)
+for row in con.execute("""
+    SELECT session_id, COUNT(*) AS events, COUNT(DISTINCT snapshot_id) AS snaps,
+           MIN(observed_at) AS first_seen
+      FROM attributions
+     GROUP BY session_id
+     ORDER BY first_seen
+"""):
+    sid, events, snaps, first_seen = row
+    print(f'  {sid[:32]:<32}  {events:>6}  {snaps:>9}  {first_seen}')
+con.close()
+PYEOF
+else
+  printf '  (no lineage.sqlite — has the hook fired yet?)\n'
+fi
 printf '\n'
 
 printf '5) Worked diffs\n----------------\n'
@@ -116,7 +153,7 @@ printf '\n  schema agreement:\n'
 python3 scripts/check_schema_agreement.py 2>&1 | tail -2 | sed 's/^/    /'
 printf '\n  format-version-bump (vs HEAD):\n'
 python3 scripts/check_format_version_bump.py 2>&1 | sed 's/^/    /'
-printf '\n  canonical-501 byte-stability:\n'
+printf '\n  canonical-501 byte-stability (v0.2.0 fixture):\n'
 BEFORE=$(sha256sum spec/test-vectors/canonical-501.bin | awk '{print $1}')
 python3 scripts/build_examples.py >/dev/null 2>&1
 AFTER=$(sha256sum spec/test-vectors/canonical-501.bin | awk '{print $1}')

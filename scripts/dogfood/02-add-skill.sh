@@ -29,8 +29,12 @@ suggest "$(cat <<EOF
 
 After exiting:
   $HARNESS log | head -3
-  # Expect: a new auto snapshot, parented on the day-1 baseline.
+  # Expect: a new manual snapshot, parented on the day-1 init.
   $HARNESS diff <day-1-id> <day-2-id>
   # Expect: + skill test-runner. Nothing else changed.
+  $HARNESS sessions
+  # Expect: 2 session ids (the reset-fire and this day-2 fire), each
+  # with at least one event. Day-2's trajectory should include
+  # session_start AND any user_prompt events from prompts you typed.
 EOF
 )"

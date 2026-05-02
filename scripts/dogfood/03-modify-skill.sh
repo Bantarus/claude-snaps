@@ -34,5 +34,16 @@ After exiting:
   # Expect: ~ skill notes (configHash differs). Nothing added or removed.
   # The diff should be visibly minimal — this is the "small drift"
   # signal-to-noise probe.
+
+Optional Session 2 (dedup probe — see PROMPTS.md):
+  Re-launch claude with the SAME prompt or a benign follow-up; do not
+  edit any files. After /exit, verify:
+    $HARNESS log | wc -l
+    # Expect: NO new snapshot — the second session's composition was
+    # unchanged, so the hook took the no-change path and recorded an
+    # attribution row only.
+    $HARNESS log --with-sessions | head -3
+    # Expect: the day-3 snapshot row shows '[2 sessions]' (or however
+    # many same-composition sessions you fired).
 EOF
 )"

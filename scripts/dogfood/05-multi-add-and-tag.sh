@@ -70,6 +70,21 @@ Then:
   # prompt /recap. THIS is the upper-end readability test: does the diff
   # output stay legible with multiple additions?
   $HARNESS log | head -10
-  # Expect: a tag snapshot for v0.1 referencing the day-5 auto snapshot.
+  # Expect: a tag snapshot for v0.1 referencing the day-5 manual
+  # snapshot (kind=manual; v0.2 has no 'auto' kind).
+
+Resume probe (Session 2 — see PROMPTS.md):
+  cd $SOAK_DIR
+  claude --continue
+  > <follow-up prompt from PROMPTS.md>
+  /exit
+
+After the resumed session:
+  $HARNESS sessions
+  # Find the resumed session's id (same as the original day-5 session).
+  $HARNESS sessions <session-id>
+  # Expect: a trajectory with NO session_start row (resume skips it)
+  # but WITH one or more user_prompt rows for prompts in the resumed
+  # session. This is the v0.2 closure of the resume gap.
 EOF
 )"

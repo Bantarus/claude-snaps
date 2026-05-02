@@ -52,21 +52,27 @@ note "wrote .claude/settings.json (model pinned to haiku)"
 "$HARNESS" init >/dev/null
 note "harness init complete"
 
-# install-hook with --yes (skip the interactive confirmation).
-"$HARNESS" install-hook --yes >/dev/null 2>&1 || {
-  # Fallback: install-hook may not have --yes; install manually.
+# install-hook needs an interactive 'y' confirmation. Pipe it in.
+# (CLI install-hook is the v0.2 dual-event installer; writes BOTH
+# SessionStart and UserPromptSubmit entries.)
+if echo "y" | "$HARNESS" install-hook >/dev/null 2>&1; then
+  note "installed harness-hook (SessionStart + UserPromptSubmit) via 'harness install-hook'"
+else
+  # Fallback: write both entries manually.
   python3 - "$SOAK_DIR/.claude/settings.json" <<'PYEOF'
 import json, sys
 p = sys.argv[1]
 s = json.load(open(p))
-s.setdefault('hooks', {}).setdefault('SessionStart', []).append({
-    'matcher': '*',
-    'hooks': [{'type': 'command', 'command': 'harness-hook'}],
-})
+hooks = s.setdefault('hooks', {})
+for event in ('SessionStart', 'UserPromptSubmit'):
+    hooks.setdefault(event, []).append({
+        'matcher': '*',
+        'hooks': [{'type': 'command', 'command': 'harness-hook'}],
+    })
 open(p, 'w').write(json.dumps(s, indent=2))
 PYEOF
-  note "installed harness-hook into settings.json (fallback path)"
-}
+  note "installed harness-hook (SessionStart + UserPromptSubmit) via fallback"
+fi
 
 # Sanity probe: fire the hook with a synthetic stdin to confirm everything
 # wires up before the user starts day 02. Uses a "reset" session id so it

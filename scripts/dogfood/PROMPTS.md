@@ -266,25 +266,54 @@ You should see fresh snapshot hashes appear.
 
 ---
 
-## Multi-Session Probe Checks
+## Multi-Session Probe Checks (v0.2)
 
-After **day 03** and **day 09**, check diff noise floor:
+After **day 03** and **day 09**, check the dedup behavior:
 
 ```bash
-harness log | head -10
-harness diff <snapshot1> <snapshot2>  # between consecutive same-composition sessions
+harness log --with-sessions | head -10
+# Same-composition sessions SHOULD share a snapshot row (the row will
+# show '[2 sessions]' or '[3 sessions]' next to it). If you see
+# multiple rows for compositions you observed without changing — that's
+# a §3.1-strip bug to flag.
+
+harness sessions
+# All session_ids should be listed. Each session that ran without
+# changing composition should have events > 0 and snapshots = 1.
 ```
 
-After **day 05** and **day 07**, check session_id behavior:
+After **day 05** and **day 07**, check resume + /clear behavior:
 
 ```bash
-# Count hook firings vs snapshots recorded
-grep -c 'SessionStart:startup' ~/.claude/projects/$(basename $(pwd))*.jsonl 2>/dev/null || echo "Check JSONL manually"
+harness sessions
+# Find each relevant session id from the listing.
+
+harness sessions <resumed-session-id>
+# RESUMED sessions: trajectory should have NO session_start row but
+# AT LEAST ONE user_prompt row. This is the v0.2 closure of the
+# original soak's resume-gap finding. If you see a session_start row,
+# Claude Code did NOT actually resume — note the empirical observation.
+
+harness sessions <post-clear-session-id>
+# POST-/clear sessions (if Claude Code mints a new session id on
+# /clear, which it historically does): trajectory starts with
+# session_start. Snapshot id will likely match the pre-/clear session
+# (composition didn't change), demonstrating attribution-only writes
+# across distinct sessions.
+```
+
+The v0.2 contract: every fire produces an attribution row. Snapshots
+are written only when composition changes.
+
+```bash
+# Total fires across the soak:
+sqlite3 .harness/lineage.sqlite 'SELECT COUNT(*) FROM attributions;'
+# Total unique compositions:
 harness log | wc -l
+# Ratio of fires to snapshots is the no-change-path "win rate" — high
+# is good (most prompts didn't change composition; cache short-circuit
+# kicked in).
 ```
-
-If hook firings match snapshot count → each fire got a new session_id (no resume idempotency).  
-If hook firings > snapshots → idempotency suppressed duplicates.
 
 ---
 

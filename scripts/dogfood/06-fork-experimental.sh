@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Day 06 — branch divergence: fork an experimental branch, modify a
-# skill differently than main.
-# Tests: branch creation, fork-kind snapshot, divergent lineage.
+# Day 06 — branch divergence: branch off main into experimental,
+# modify a skill differently than main.
+# Tests: branch creation (no 'fork' kind in v0.2 — just a manual
+# snapshot whose `branch` field is the new branch name) and divergent
+# lineage.
 
 source "$(dirname "$0")/lib.sh"
 require_soak_dir
@@ -51,8 +53,11 @@ suggest "$(cat <<EOF
 
 After exiting:
   $HARNESS log | head -10
-  # Expect: a fork-kind snapshot, then an auto on \`experimental\` branch.
-  # The DAG now has two branches — main (with v0.1 tag) and experimental.
+  # Expect: a manual snapshot on the \`experimental\` branch
+  # (parentIds=[<v0.1 tag id>]). The DAG now has two branches — main
+  # (with v0.1 tag) and experimental.
+  $HARNESS log --branch experimental
+  # Expect: just the experimental tip snapshot.
   $HARNESS diff <main-day-5-id> <experimental-day-6-id>
   # Expect: ~ skill test-runner. Same name, different configHash.
 EOF

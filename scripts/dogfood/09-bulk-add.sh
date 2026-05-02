@@ -74,7 +74,21 @@ After exiting:
   #   + style terse
   #   + prompt /note
   # CRITICAL question: is this output legible at 4 changes? If the diff
-  # already feels cluttered at 4, the TUI Diff screen needs grouping
-  # before v0.2.
+  # feels cluttered at 4, that's a v0.3 ergonomic backlog item — the
+  # CLI may need grouping output by module type.
+
+Multi-session probe (Sessions 2-3 — see PROMPTS.md):
+  Each follow-up uses claude --continue with a benign question; no file
+  edits between them. After they finish:
+
+  $HARNESS log --with-sessions | head -5
+  # Expect: the day-9 snapshot row shows '[2 sessions]' or '[3 sessions]'
+  # depending on how many continues you fired. ONE snapshot, multiple
+  # trajectories — the dedup-at-scale verification.
+
+  $HARNESS sessions <day-9-session-id>
+  # Expect: the original session's trajectory shows session_start +
+  # user_prompts; resumed sessions show user_prompts only. All point
+  # at the same snapshot id (= sign in trajectory output).
 EOF
 )"
