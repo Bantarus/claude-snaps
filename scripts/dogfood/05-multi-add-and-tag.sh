@@ -70,8 +70,23 @@ Then:
   # prompt /recap. THIS is the upper-end readability test: does the diff
   # output stay legible with multiple additions?
   $HARNESS log | head -10
-  # Expect: a tag snapshot for v0.1 referencing the day-5 manual
-  # snapshot (kind=manual; v0.2 has no 'auto' kind).
+  # Expect: a tag snapshot for v0.1 above the auto snapshot whose summary
+  # reads "+1 instruction, +1 agent, +1 prompt" (computed at read time).
+  # In v0.3 the kind is 'auto', not 'manual' (renamed in v0.3.0 §2.2).
+
+User-note probe (no Claude session — direct CLI):
+  cd $SOAK_DIR
+  $HARNESS snap "promoting baseline composition to v0.1"
+  # Expect: 'No composition change since <id>; note attached to existing
+  # snapshot.' This is the v0.3 note attribution event path — ZERO new
+  # snapshots, ONE new note row attached to the existing v0.1 tag's
+  # snapshot id. The CLI uses the literal sessionId '<manual>' so the
+  # note shows up under that session in trajectory listings.
+
+  $HARNESS notes v0.1
+  # Expect: '<manual>  "promoting baseline composition to v0.1"'.
+  # The Q2 cross-session-notes query from format.md §2.7. Same query
+  # works against any ref (id prefix, branch name, tag name, HEAD).
 
 Resume probe (Session 2 — see PROMPTS.md):
   cd $SOAK_DIR
@@ -83,8 +98,13 @@ After the resumed session:
   $HARNESS sessions
   # Find the resumed session's id (same as the original day-5 session).
   $HARNESS sessions <session-id>
-  # Expect: a trajectory with NO session_start row (resume skips it)
-  # but WITH one or more user_prompt rows for prompts in the resumed
-  # session. This is the v0.2 closure of the resume gap.
+  # v0.3 expectation per spec/format.md §4.6: the host fires
+  # SessionStart on resume too (with source=resume). What you'll
+  # actually see depends on Claude Code's behavior in your install.
+  # The load-bearing assertion is: at least one user_prompt row from
+  # the resumed prompts. If a session_start row is present with
+  # source=resume, that confirms §4.6 against the host. Either way
+  # the v0.1-era "resume gap" framing was a measurement bug, not a
+  # host-behavior gap.
 EOF
 )"

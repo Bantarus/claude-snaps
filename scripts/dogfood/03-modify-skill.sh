@@ -30,6 +30,9 @@ suggest "$(cat <<EOF
   /exit
 
 After exiting:
+  $HARNESS log | head -3
+  # Expect: a new auto snapshot whose per-row summary reads
+  # "~1 skill (notes)" — single change so the name appears in parens.
   $HARNESS diff <day-2-id> <day-3-id>
   # Expect: ~ skill notes (configHash differs). Nothing added or removed.
   # The diff should be visibly minimal — this is the "small drift"

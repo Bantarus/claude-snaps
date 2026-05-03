@@ -67,6 +67,11 @@ suggest "$(cat <<EOF
   /exit
 
 After exiting:
+  $HARNESS log | head -3
+  # Expect: a new auto snapshot whose summary reads
+  # "+2 skills, +1 prompt, +1 style" (computed at read time —
+  # adds are grouped by type, no names listed for adds; only
+  # removals/changes show names in parens).
   $HARNESS diff <day-8-id> <day-9-id>
   # Expect: 4 additions in one diff:
   #   + skill git-explain
@@ -74,7 +79,7 @@ After exiting:
   #   + style terse
   #   + prompt /note
   # CRITICAL question: is this output legible at 4 changes? If the diff
-  # feels cluttered at 4, that's a v0.3 ergonomic backlog item — the
+  # feels cluttered at 4, that's a v0.4 ergonomic backlog item — the
   # CLI may need grouping output by module type.
 
 Multi-session probe (Sessions 2-3 — see PROMPTS.md):

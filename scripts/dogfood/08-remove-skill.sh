@@ -15,6 +15,9 @@ suggest "$(cat <<EOF
   /exit
 
 After exiting:
+  $HARNESS log | head -3
+  # Expect: a new auto snapshot whose summary reads "-1 skill (test-runner)"
+  # — single removal so the name appears in parens.
   $HARNESS diff <day-7-id> <day-8-id>
   # Expect: − skill test-runner. Nothing else changed.
   # The experimental branch still has its own test-runner — verify

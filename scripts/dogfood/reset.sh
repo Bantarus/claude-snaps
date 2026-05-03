@@ -53,7 +53,7 @@ note "wrote .claude/settings.json (model pinned to haiku)"
 note "harness init complete"
 
 # install-hook needs an interactive 'y' confirmation. Pipe it in.
-# (CLI install-hook is the v0.2 dual-event installer; writes BOTH
+# (CLI install-hook is the v0.3 dual-event installer; writes BOTH
 # SessionStart and UserPromptSubmit entries.)
 if echo "y" | "$HARNESS" install-hook >/dev/null 2>&1; then
   note "installed harness-hook (SessionStart + UserPromptSubmit) via 'harness install-hook'"

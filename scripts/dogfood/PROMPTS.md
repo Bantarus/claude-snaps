@@ -266,7 +266,7 @@ You should see fresh snapshot hashes appear.
 
 ---
 
-## Multi-Session Probe Checks (v0.2)
+## Multi-Session Probe Checks (v0.3)
 
 After **day 03** and **day 09**, check the dedup behavior:
 
@@ -289,10 +289,14 @@ harness sessions
 # Find each relevant session id from the listing.
 
 harness sessions <resumed-session-id>
-# RESUMED sessions: trajectory should have NO session_start row but
-# AT LEAST ONE user_prompt row. This is the v0.2 closure of the
-# original soak's resume-gap finding. If you see a session_start row,
-# Claude Code did NOT actually resume — note the empirical observation.
+# RESUMED sessions in v0.3: per spec/format.md §4.6, the host fires
+# SessionStart on resume too (with source=resume). What you'll
+# empirically see depends on Claude Code's actual behavior; the
+# load-bearing assertion is at least one user_prompt row from the
+# resumed session. If a session_start row IS present with source=resume,
+# the v0.3 §4.6 narrative matches the host. If it's not, only
+# user_prompt rows landed — also fine; the v0.1-era "resume gap"
+# framing was a measurement bug, not a host-behavior gap.
 
 harness sessions <post-clear-session-id>
 # POST-/clear sessions (if Claude Code mints a new session id on
@@ -302,8 +306,10 @@ harness sessions <post-clear-session-id>
 # across distinct sessions.
 ```
 
-The v0.2 contract: every fire produces an attribution row. Snapshots
-are written only when composition changes.
+The v0.3 contract: every fire produces an attribution row. Snapshots
+are written only when composition changes. Notes are first-class
+attribution events — a `harness snap "<text>"` against an unchanged
+composition produces ZERO new snapshots and ONE new `note` row.
 
 ```bash
 # Total fires across the soak:
@@ -313,6 +319,16 @@ harness log | wc -l
 # Ratio of fires to snapshots is the no-change-path "win rate" — high
 # is good (most prompts didn't change composition; cache short-circuit
 # kicked in).
+
+# Notes ever attached to any snapshot:
+sqlite3 .harness/lineage.sqlite "SELECT COUNT(*) FROM attributions WHERE event_kind='note';"
+# After day 5 you should see at least 1 (the harness snap "<note>" probe).
+
+# Notes attached to a specific snapshot (Q2 from format.md §2.7):
+harness notes <ref>
+# Where <ref> is a snapshot id, prefix, branch, tag (e.g. v0.1), or HEAD.
+# Surfaces every note ever attached, across sessions, ordered by
+# observed_at.
 ```
 
 ---

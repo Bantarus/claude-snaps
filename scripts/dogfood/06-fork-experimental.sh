@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Day 06 — branch divergence: branch off main into experimental,
 # modify a skill differently than main.
-# Tests: branch creation (no 'fork' kind in v0.2 — just a manual
+# Tests: branch creation (no 'fork' kind in v0.3 — just an auto
 # snapshot whose `branch` field is the new branch name) and divergent
 # lineage.
 
@@ -53,12 +53,18 @@ suggest "$(cat <<EOF
 
 After exiting:
   $HARNESS log | head -10
-  # Expect: a manual snapshot on the \`experimental\` branch
-  # (parentIds=[<v0.1 tag id>]). The DAG now has two branches — main
-  # (with v0.1 tag) and experimental.
+  # Expect: an auto snapshot on the \`experimental\` branch
+  # (parentIds=[<v0.1 tag id>]) with summary "~1 skill (test-runner)".
+  # The DAG now has two branches — main (with v0.1 tag) and experimental.
   $HARNESS log --branch experimental
   # Expect: just the experimental tip snapshot.
   $HARNESS diff <main-day-5-id> <experimental-day-6-id>
   # Expect: ~ skill test-runner. Same name, different configHash.
+
+Heads-up for day 7: harness checkout does NOT revert the working tree
+in v0.3 (this is the "FOOTGUN" called out in the README). After this
+day completes, your working tree carries experimental's test-runner
+content. Day 7's script restores main's content explicitly before its
+no-op probe so the boring-floor test stays clean.
 EOF
 )"

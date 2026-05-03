@@ -29,7 +29,8 @@ suggest "$(cat <<EOF
 
 After exiting:
   $HARNESS log | head -3
-  # Expect: a new manual snapshot, parented on the day-1 init.
+  # Expect: a new auto snapshot, parented on the day-1 init. The per-row
+  # summary should say "+1 skill" (computed at read time by summarizeDiff).
   $HARNESS diff <day-1-id> <day-2-id>
   # Expect: + skill test-runner. Nothing else changed.
   $HARNESS sessions
