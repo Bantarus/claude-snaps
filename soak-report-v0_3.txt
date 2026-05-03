@@ -1,0 +1,177 @@
+
+========================================
+DOGFOOD SOAK AUDIT
+2026-05-03T19:43:40Z
+soak dir: ~/harness-dogfood-soak
+monorepo: ~/DEV/claude-snaps
+========================================
+
+1) harness log (full DAG, newest first)
+----------------
+8b87dffa ▶ +2 skills, +1 prompt, +1 style  (main) code:7ab14b4
+c9ae0620 ▶ -1 skill (test-runner)  (main) code:7ab14b4
+8bcfb5f2 ▶ ~1 skill (test-runner)  (experimental) code:7ab14b4
+6f8728b4 ▶ +1 instruction, +1 agent, +1 prompt  (main) code:7ab14b4
+6412aad4 ▶ +1 mcp  (main) code:7ab14b4
+0c009c4a ▶ ~1 skill (notes)  (main) code:7ab14b4
+4da053ad ▶ +1 skill  (main) code:7ab14b4
+27323507 ★ init  (main) code:7ab14b4
+
+
+2) Branches and tags
+----------------
+  branch: experimental
+  branch: main
+  tag:    v0.1
+  tag:    v0.3
+
+3) Snapshot count by kind
+----------------
+  auto     7
+  init     1
+  total    8
+
+4) Module composition trend (count per snapshot, by source.kind)
+----------------
+  created                  id         kind     branch         tag      modules                  
+  ------------------------ ---------- -------- -------------- -------- -------------------------
+  2026-05-03T19:15:52.979Z 27323507   init     main                    builtin:11, local:3      
+  2026-05-03T19:18:35.402Z 4da053ad   auto     main                    builtin:11, local:4      
+  2026-05-03T19:19:38.833Z 0c009c4a   auto     main                    builtin:11, local:4      
+  2026-05-03T19:21:57.438Z 6412aad4   auto     main                    builtin:11, local:5      
+  2026-05-03T19:23:08.194Z 6f8728b4   auto     main                    builtin:11, local:8      
+  2026-05-03T19:27:20.964Z 8bcfb5f2   auto     experimental            builtin:11, local:8      
+  2026-05-03T19:33:32.595Z c9ae0620   auto     main                    builtin:11, local:7      
+  2026-05-03T19:36:37.650Z 8b87dffa   auto     main                    builtin:11, local:11     
+
+4b) Attribution events (v0.3)
+----------------
+  event_kind        count
+  ------------------------
+  note              2
+  session_start     16
+  user_prompt       15
+  total             33
+
+  notes ever attached: 2
+    2026-05-03T19:23:56.788Z  <manual>    6f8728b4  "promoting baseline composition to v0.1"
+    2026-05-03T19:42:06.742Z  <manual>    8b87dffa  "v0.3 final tag — soak complete"
+
+  session_id                        events  snapshots  notes  first_seen
+  --------------------------------  ------  ---------  -----  ------------------------
+  soak-reset-1777835752                  1          1      0  2026-05-03T19:15:52.979Z
+  6942d87b-026c-4956-a198-18cbfc11       2          1      0  2026-05-03T19:18:35.402Z
+  a9bb01b2-f28d-4436-84eb-b5a35179       2          1      0  2026-05-03T19:19:38.833Z
+  77da384b-0b27-45dd-82d3-383b5815       2          1      0  2026-05-03T19:20:13.873Z
+  f3766f47-bd2f-40b0-b961-dd58bcc0       2          1      0  2026-05-03T19:21:57.438Z
+  ceccbb13-e4a9-4fab-a749-dcfb1d4e       4          1      0  2026-05-03T19:23:08.194Z
+  <manual>                               2          2      2  2026-05-03T19:23:56.788Z
+  62277c91-85ed-4b09-8df5-d1764691       2          1      0  2026-05-03T19:27:20.964Z
+  bf552e8f-32f0-4740-81cf-a4fef386       2          1      0  2026-05-03T19:28:30.419Z
+  7dab637a-132c-43ef-8c0a-28411d50       4          1      0  2026-05-03T19:28:39.594Z
+  22922ac5-40eb-4d89-a67e-f85947c1       2          1      0  2026-05-03T19:33:32.595Z
+  28fd642e-6637-43f9-93bb-13e9cae6       6          1      0  2026-05-03T19:36:37.650Z
+  7bdf2650-8bd2-45f3-a1ef-2456f160       2          1      0  2026-05-03T19:40:55.616Z
+
+5) Worked diffs
+----------------
+
+  diff v0.1 → v0.3 (the meaningful soak delta):
+    6f8728b4..8b87dffa
+    + ✦ git-explain            (added)
+    + ✦ profile-bench            (added)
+    − ✦ test-runner            (removed)
+    + / /note            (added)
+    + ◇ terse            (added)
+    
+    +4 added  −1 removed  ~0 changed
+
+  diff baseline → latest (full soak delta):
+    27323507..8b87dffa
+    + ✎ CLAUDE.md            (added)
+    + ◐ code-reviewer            (added)
+    + ✦ git-explain            (added)
+    ~ ✦ notes ? → ?  (changed)
+    + ✦ profile-bench            (added)
+    + / /note            (added)
+    + / /recap            (added)
+    + ⌥ filesystem            (added)
+    + ◇ terse            (added)
+    
+    +8 added  −0 removed  ~1 changed
+
+6) Hook firings — JSONL trail (NOTE: v0.1-shape signal only)
+----------------
+  jsonl dir: ~/.claude/projects/-home-bantarus-harness-dogfood-soak
+  019502eb  SessionStart attachments: 1
+  103caa5b  SessionStart attachments: 1
+  104b6f59  SessionStart attachments: 1
+  1a3de2d1  SessionStart attachments: 1
+  22922ac5  SessionStart attachments: 1
+  28fd642e  SessionStart attachments: 1
+  2df06227  SessionStart attachments: 1
+  3a5f4a5b  SessionStart attachments: 1
+  3b29a10d  SessionStart attachments: 1
+  3bdd66f1  SessionStart attachments: 1
+  3ce25939  SessionStart attachments: 1
+  47c49608  SessionStart attachments: 1
+  48e5c422  SessionStart attachments: 1
+  4b313d58  SessionStart attachments: 1
+  5113ed0d  SessionStart attachments: 1
+  57bb878e  SessionStart attachments: 1
+  5e399035  SessionStart attachments: 1
+  5ef5f33c  SessionStart attachments: 1
+  62277c91  SessionStart attachments: 1
+  6257c408  SessionStart attachments: 0
+  684cfc4f  SessionStart attachments: 1
+  6942d87b  SessionStart attachments: 1
+  7092d637  SessionStart attachments: 1
+  734c035b  SessionStart attachments: 1
+  7769e7d5  SessionStart attachments: 0
+  77da384b  SessionStart attachments: 1
+  7bb5ac2b  SessionStart attachments: 1
+  7bdf2650  SessionStart attachments: 1
+  7dab637a  SessionStart attachments: 0
+  91c604ee  SessionStart attachments: 1
+  938cf0b2  SessionStart attachments: 1
+  a5bf975c  SessionStart attachments: 1
+  a9bb01b2  SessionStart attachments: 1
+  bf552e8f  SessionStart attachments: 1
+  c02ee05a  SessionStart attachments: 0
+  c6daa3da  SessionStart attachments: 1
+  ceccbb13  SessionStart attachments: 1
+  d6340998  SessionStart attachments: 1
+  e52b1067  SessionStart attachments: 1
+  f3766f47  SessionStart attachments: 1
+
+  (zero entries here for a session does NOT mean the hook did not
+   fire — UserPromptSubmit fires for that session may still appear
+   in section 4b. v0.4 candidate: parse the full hook trail correctly.)
+
+7) Spec gates (run from monorepo)
+----------------
+
+  schema agreement:
+    Total: 37 passed, 0 failed.
+    All cases agree across SQL CHECK and JSON Schema (post-004 v0.3.0 schema).
+
+  format-version-bump (vs HEAD):
+    ✓ no spec schema changes detected vs HEAD
+
+  canonical-501 byte-stability (v0.3.0 fixture):
+    ✓ byte-identical (da5289e572c0fe42e6dcda250a6d392543302965325c56a31f9fce9c4d740412)
+
+8) Working tree vs git audit
+----------------
+  ✓ no orphan files (every file on disk is tracked or correctly ignored)
+  spec example blobs:  on disk=20 tracked=20 ✓
+
+9) Test gates
+----------------
+  packages/core test:       Tests  104 passed (104)
+  packages/cli test:       Tests  43 passed (43)
+  packages/hook test:       Tests  22 passed (22)
+
+========================================
+AUDIT END
+========================================
