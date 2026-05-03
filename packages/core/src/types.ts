@@ -29,14 +29,13 @@ export interface Module {
   source: ModuleSource;
 }
 
-export type SnapshotKind = 'init' | 'auto' | 'tag';
+export type SnapshotKind = 'init' | 'auto';
 
 export interface Snapshot {
   id: string;
   parentIds: string[];
   branch: string;
   kind: SnapshotKind;
-  version?: string;
   codePin: string | null;
   apmLockHash: string | null;
   createdAt: string;

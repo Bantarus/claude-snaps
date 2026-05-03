@@ -88,8 +88,8 @@ describe('diff — output order is deterministic', () => {
 
 describe('diff — example fixtures', () => {
   test('solo-no-apm: init → final reveals expected change set', () => {
-    const init = readSnapshot(SOLO_NO_APM, '93a90c3dcf88359695a771147325e20441b00fa0');
-    const finalAuto = readSnapshot(SOLO_NO_APM, 'f1a1b68f58eed2fe907b5e46ac4b2680f9fbd26d');
+    const init = readSnapshot(SOLO_NO_APM, 'c83bd37ee1409defb1ef0f06c8173618a13ab1d3');
+    const finalAuto = readSnapshot(SOLO_NO_APM, '4b4506061fedc71b377b87eb203b692a511d8f52');
     const ops = diff(init.modules, finalAuto.modules);
     // The fixture lineage in build_examples.py adds a `format-post` hook
     // partway through; expect at minimum one add op.
@@ -98,8 +98,8 @@ describe('diff — example fixtures', () => {
   });
 
   test('solo-no-apm: snapshot the exact diff (regression guard)', () => {
-    const init = readSnapshot(SOLO_NO_APM, '93a90c3dcf88359695a771147325e20441b00fa0');
-    const finalAuto = readSnapshot(SOLO_NO_APM, 'f1a1b68f58eed2fe907b5e46ac4b2680f9fbd26d');
+    const init = readSnapshot(SOLO_NO_APM, 'c83bd37ee1409defb1ef0f06c8173618a13ab1d3');
+    const finalAuto = readSnapshot(SOLO_NO_APM, '4b4506061fedc71b377b87eb203b692a511d8f52');
     expect(diff(init.modules, finalAuto.modules)).toMatchSnapshot();
   });
 });

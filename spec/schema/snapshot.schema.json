@@ -17,9 +17,9 @@
   "properties": {
     "formatVersion": {
       "type": "string",
-      "description": "Optional; defaults to \"0.3\" if absent. Major version mismatch is a hard error per format.md §9.",
-      "pattern": "^[0-9]+\\.[0-9]+$",
-      "default": "0.3"
+      "description": "Optional; defaults to \"0.3.1\" if absent. v0.3.x writers MAY emit \"0.3\" (the family default) or a more specific patch like \"0.3.1\". Major version mismatch is a hard error per format.md §9.",
+      "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?$",
+      "default": "0.3.1"
     },
     "id": {
       "type": "string",
@@ -41,11 +41,7 @@
     },
     "kind": {
       "type": "string",
-      "enum": ["init", "auto", "tag"]
-    },
-    "version": {
-      "type": ["string", "null"],
-      "description": "Promotion label. REQUIRED on kind='tag'. SHOULD be null on other kinds; if non-null, names a version inherited from a tag earlier in the lineage."
+      "enum": ["init", "auto"]
     },
     "codePin": {
       "type": ["string", "null"],
@@ -82,10 +78,6 @@
     {
       "if": { "properties": { "kind": { "const": "init" } }, "required": ["kind"] },
       "then": { "properties": { "parentIds": { "maxItems": 0 } } }
-    },
-    {
-      "if": { "properties": { "kind": { "const": "tag" } }, "required": ["kind"] },
-      "then": { "required": ["version"], "properties": { "version": { "type": "string" } } }
     }
   ],
   "$defs": {

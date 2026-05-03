@@ -1,12 +1,12 @@
 {
   "apmLockHash": "sha256:0a057f4f0a9475339e774ece9a656c561826bee320894f3f775c1a805858c880",
-  "author": "alex@example.com",
-  "branch": "experimental",
-  "codePin": "a3f9c1ef2244c3e85d10b0a6b7d52f0911aabbcc",
-  "createdAt": "2026-04-30T14:30:00.000Z",
+  "author": "ben@example.com",
+  "branch": "main",
+  "codePin": "9c12aa44b30115ee61b2c7a890fdc31002ee30bb",
+  "createdAt": "2026-04-20T09:00:00.000Z",
   "formatVersion": "0.3",
-  "id": "5750b9241c76f3c0ed746fb8e34dbc013ade53b5",
-  "kind": "auto",
+  "id": "741a33a39d1e4b324a1a746662124cefe069535d",
+  "kind": "init",
   "modules": [
     {
       "enabled": true,
@@ -115,7 +115,5 @@
       "type": "mcp"
     }
   ],
-  "parentIds": [
-    "b7845e7a63d3e82701523c97c2b5c9c89f9a2958"
-  ]
+  "parentIds": []
 }

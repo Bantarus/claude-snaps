@@ -29,8 +29,10 @@ walkthrough — read it like a stranger:
 
   1. Lineage at a glance:
      $HARNESS log
-     # Read top-to-bottom. Do the kinds (init / auto / tag) and
-     # branches make sense? In v0.3 each row's per-row summary is
+     # Read top-to-bottom. Do the kinds (init / auto) and branches
+     # make sense? Tags appear as inverted-yellow annotations after
+     # the branch column (lightweight refs, not snapshots — v0.3.1
+     # §4.2). In v0.3 each row's per-row summary is
      # computed at read time by summarizeDiff (e.g. "init",
      # "+1 skill", "~1 skill (notes)", "+2 skills, +1 prompt, +1 style").
      # The v0.2 soak's "(no message)" gap is closed — but does the

@@ -40,7 +40,7 @@ describe('apmLockHash — example fixtures', () => {
     // apmLockHash() computes from the on-disk lockfile bytes.
     const initBlob = JSON.parse(
       require('node:fs').readFileSync(
-        resolve(TEAM_PROJECT, '.harness/snapshots/2f/2939ecd2a17f5a57bc777afd4728342e13ecab.json'),
+        resolve(TEAM_PROJECT, '.harness/snapshots/74/1a33a39d1e4b324a1a746662124cefe069535d.json'),
         'utf-8',
       ),
     );

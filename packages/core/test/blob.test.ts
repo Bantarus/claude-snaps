@@ -41,7 +41,8 @@ describe('blob.readSnapshot', () => {
 
   test('reads every example blob and verifies hash integrity', () => {
     const ids = listSnapshots(SOLO_NO_APM);
-    expect(ids.length).toBe(5);
+    // v0.3.1: solo-no-apm has 4 snapshots (was 5; tag-kind dropped).
+    expect(ids.length).toBe(4);
     for (const id of ids) {
       const blob = readSnapshot(SOLO_NO_APM, id);
       expect(blob.id).toBe(id);
@@ -119,8 +120,9 @@ describe('blob.writeSnapshot', () => {
 });
 
 describe('blob.listSnapshots', () => {
-  test('returns 5 ids for solo-no-apm', () => {
-    expect(listSnapshots(SOLO_NO_APM).sort().length).toBe(5);
+  test('returns 4 ids for solo-no-apm', () => {
+    // v0.3.1: solo-no-apm has 4 snapshots (was 5; tag-kind dropped).
+    expect(listSnapshots(SOLO_NO_APM).sort().length).toBe(4);
   });
 
   test('returns empty array on missing snapshots dir', () => {

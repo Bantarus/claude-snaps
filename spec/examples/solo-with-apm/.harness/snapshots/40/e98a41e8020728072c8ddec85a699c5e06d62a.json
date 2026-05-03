@@ -3,10 +3,10 @@
   "author": "ben@example.com",
   "branch": "main",
   "codePin": "1100ffeebbccdd44aa5566778899aabbccddeeff",
-  "createdAt": "2026-04-27T11:30:00.000Z",
+  "createdAt": "2026-04-26T10:00:00.000Z",
   "formatVersion": "0.3",
-  "id": "948a7a6535a5d358a3ee0c1ef140ae4d47b60fb8",
-  "kind": "auto",
+  "id": "40e98a41e8020728072c8ddec85a699c5e06d62a",
+  "kind": "init",
   "modules": [
     {
       "enabled": true,
@@ -78,7 +78,5 @@
       "type": "mcp"
     }
   ],
-  "parentIds": [
-    "42d165b5aeda48dbc9cdf50f4bf01629152b2898"
-  ]
+  "parentIds": []
 }

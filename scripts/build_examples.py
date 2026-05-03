@@ -183,7 +183,6 @@ def build_solo_no_apm():
         "parentIds": [],
         "branch": "main",
         "kind": "init",
-        "version": "v0.1",
         "codePin": "71fe33aa01bc4d2e3f8970a14b5cdee2330aa901",
         "createdAt": "2026-04-23T09:12:30.000Z",
         "author": "ben@example.com",
@@ -221,23 +220,12 @@ def build_solo_no_apm():
     }
     id_auto1 = write_snapshot(h, s_auto1)
 
-    s_tag = {
-        "formatVersion": "0.3",
-        "parentIds": [id_auto1],
-        "branch": "main",
-        "kind": "tag",
-        "version": "v0.2",
-        "codePin": "9c12aa44b30115ee61b2c7a890fdc31002ee30bb",
-        "createdAt": "2026-04-25T18:00:00.000Z",
-        "author": "ben@example.com",
-        "apmLockHash": None,
-        "modules": auto_modules,
-    }
-    id_tag = write_snapshot(h, s_tag)
-
+    # v0.3.1: tag is a lightweight ref, not a snapshot. The v0.2 tag
+    # points directly at id_auto1 (the underlying composition);
+    # s_auto2 below parents on id_auto1 directly (was id_tag pre-v0.3.1).
     s_auto2 = {
         "formatVersion": "0.3",
-        "parentIds": [id_tag],
+        "parentIds": [id_auto1],
         "branch": "main",
         "kind": "auto",
         "codePin": "a3f9c1ef2244c3e85d10b0a6b7d52f0911aabbcc",
@@ -250,7 +238,7 @@ def build_solo_no_apm():
 
     write_text(h / "HEAD", "ref: refs/heads/main\n")
     write_text(h / "refs" / "heads" / "main", id_auto2 + "\n")
-    write_text(h / "refs" / "tags" / "v0.2", id_tag + "\n")
+    write_text(h / "refs" / "tags" / "v0.2", id_auto1 + "\n")
     write_text(h / "config", CONFIG_DEFAULT)
 
 
@@ -331,7 +319,6 @@ def build_solo_with_apm():
         "parentIds": [],
         "branch": "main",
         "kind": "init",
-        "version": "v0.1",
         "codePin": "1100ffeebbccdd44aa5566778899aabbccddeeff",
         "createdAt": "2026-04-26T10:00:00.000Z",
         "author": "ben@example.com",
@@ -353,23 +340,11 @@ def build_solo_with_apm():
     }
     id_auto = write_snapshot(h, s_auto)
 
-    s_tag = {
-        "formatVersion": "0.3",
-        "parentIds": [id_auto],
-        "branch": "main",
-        "kind": "tag",
-        "version": "v0.1",
-        "codePin": "1100ffeebbccdd44aa5566778899aabbccddeeff",
-        "createdAt": "2026-04-27T12:00:00.000Z",
-        "author": "ben@example.com",
-        "apmLockHash": lock_hash,
-        "modules": modules_v1,
-    }
-    id_tag = write_snapshot(h, s_tag)
-
+    # v0.3.1: tag is a lightweight ref. v0.1 points at id_auto (the
+    # tagged composition). HEAD also points at id_auto via main.
     write_text(h / "HEAD", "ref: refs/heads/main\n")
-    write_text(h / "refs" / "heads" / "main", id_tag + "\n")
-    write_text(h / "refs" / "tags" / "v0.1", id_tag + "\n")
+    write_text(h / "refs" / "heads" / "main", id_auto + "\n")
+    write_text(h / "refs" / "tags" / "v0.1", id_auto + "\n")
     write_text(h / "config", CONFIG_DEFAULT)
 
 
@@ -446,7 +421,6 @@ def build_team_shared():
         "parentIds": [],
         "branch": "main",
         "kind": "init",
-        "version": "v0.3",
         "codePin": "9c12aa44b30115ee61b2c7a890fdc31002ee30bb",
         "createdAt": "2026-04-20T09:00:00.000Z",
         "author": "ben@example.com",
@@ -468,26 +442,13 @@ def build_team_shared():
     }
     id_auto1 = write_snapshot(h, s_auto1)
 
-    s_tag = {
-        "formatVersion": "0.3",
-        "parentIds": [id_auto1],
-        "branch": "main",
-        "kind": "tag",
-        "version": "v0.4",
-        "codePin": "a3f9c1ef2244c3e85d10b0a6b7d52f0911aabbcc",
-        "createdAt": "2026-04-30T14:00:00.000Z",
-        "author": "ben@example.com",
-        "apmLockHash": lock_hash,
-        "modules": modules_v04,
-    }
-    id_tag = write_snapshot(h, s_tag)
-
-    # Branch into experimental from id_tag — demonstrates DAG divergence.
-    # In v0.3.0 there is no `fork` kind; what makes a snapshot a "fork" is
-    # the new branch ref pointing at it, not a structural property.
+    # v0.3.1: tag is a lightweight ref. The v0.4 tag points at id_auto1
+    # (the tagged composition); main also points there. The fork onto
+    # `experimental` is a plain `auto` snapshot whose new branch ref
+    # defines the fork — `kind` does not encode "fork" (§2.2).
     s_branch = {
         "formatVersion": "0.3",
-        "parentIds": [id_tag],
+        "parentIds": [id_auto1],
         "branch": "experimental",
         "kind": "auto",
         "codePin": "a3f9c1ef2244c3e85d10b0a6b7d52f0911aabbcc",
@@ -515,9 +476,9 @@ def build_team_shared():
     id_exp_auto = write_snapshot(h, s_exp_auto)
 
     write_text(h / "HEAD", "ref: refs/heads/main\n")
-    write_text(h / "refs" / "heads" / "main", id_tag + "\n")
+    write_text(h / "refs" / "heads" / "main", id_auto1 + "\n")
     write_text(h / "refs" / "heads" / "experimental", id_exp_auto + "\n")
-    write_text(h / "refs" / "tags" / "v0.4", id_tag + "\n")
+    write_text(h / "refs" / "tags" / "v0.4", id_auto1 + "\n")
     write_text(h / "config", CONFIG_DEFAULT)
 
 

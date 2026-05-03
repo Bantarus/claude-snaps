@@ -1,21 +1,19 @@
 {
-  "apmLockHash": "sha256:cc01e1deed66eeff7357c3e96fdacd7bd0d77f0a7fb96d7fdeee16e4d6416a1e",
+  "apmLockHash": null,
   "author": "ben@example.com",
   "branch": "main",
-  "codePin": "1100ffeebbccdd44aa5566778899aabbccddeeff",
-  "createdAt": "2026-04-26T10:00:00.000Z",
+  "codePin": "a3f9c1ef2244c3e85d10b0a6b7d52f0911aabbcc",
+  "createdAt": "2026-04-30T12:08:24.000Z",
   "formatVersion": "0.3",
-  "id": "42d165b5aeda48dbc9cdf50f4bf01629152b2898",
-  "kind": "init",
+  "id": "4b4506061fedc71b377b87eb203b692a511d8f52",
+  "kind": "auto",
   "modules": [
     {
       "enabled": true,
       "name": "senior-eng",
       "source": {
-        "depth": 1,
-        "kind": "apm",
-        "package": "microsoft/senior-eng",
-        "resolvedCommit": "88aa11bb22cc33dd44ee55ff66001122334455aa"
+        "kind": "local",
+        "path": ".claude/agents/senior-eng.md"
       },
       "type": "chatmode"
     },
@@ -23,25 +21,11 @@
       "enabled": true,
       "name": "research",
       "source": {
-        "depth": 1,
-        "kind": "apm",
-        "package": "microsoft/research-skills",
-        "resolvedCommit": "4d2e1aa00ff34b9b1cdef0a1b2c3d4e5f6a7b8c9"
+        "kind": "local",
+        "path": ".claude/skills/research/SKILL.md"
       },
       "type": "skill",
-      "version": "v0.5"
-    },
-    {
-      "enabled": true,
-      "name": "summarize",
-      "source": {
-        "depth": 1,
-        "kind": "apm",
-        "package": "microsoft/research-skills",
-        "resolvedCommit": "4d2e1aa00ff34b9b1cdef0a1b2c3d4e5f6a7b8c9"
-      },
-      "type": "skill",
-      "version": "v0.5"
+      "version": "v0.4"
     },
     {
       "enabled": true,
@@ -71,13 +55,31 @@
     },
     {
       "enabled": true,
+      "name": "Write",
+      "source": {
+        "kind": "builtin"
+      },
+      "type": "mcp"
+    },
+    {
+      "enabled": true,
       "name": "Bash",
       "source": {
         "kind": "builtin"
       },
       "type": "mcp"
+    },
+    {
+      "enabled": true,
+      "name": "format-post",
+      "source": {
+        "kind": "local",
+        "path": ".claude/settings.json"
+      },
+      "type": "hook"
     }
   ],
-  "parentIds": [],
-  "version": "v0.1"
+  "parentIds": [
+    "5bd4f4b0f5e4b6c651da0f8e7ef1a78ea676b7d9"
+  ]
 }

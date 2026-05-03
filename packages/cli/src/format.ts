@@ -49,7 +49,6 @@ export const c = {
   kind(k: SnapshotKind): string {
     switch (k) {
       case 'init': return c.bold('★');
-      case 'tag':  return c.chg('◆');
       case 'auto': return c.add('▶');
     }
   },

@@ -2,11 +2,11 @@
   "apmLockHash": null,
   "author": "ben@example.com",
   "branch": "main",
-  "codePin": "71fe33aa01bc4d2e3f8970a14b5cdee2330aa901",
-  "createdAt": "2026-04-23T09:12:30.000Z",
+  "codePin": "9c12aa44b30115ee61b2c7a890fdc31002ee30bb",
+  "createdAt": "2026-04-25T08:03:45.812Z",
   "formatVersion": "0.3",
-  "id": "93a90c3dcf88359695a771147325e20441b00fa0",
-  "kind": "init",
+  "id": "5bd4f4b0f5e4b6c651da0f8e7ef1a78ea676b7d9",
+  "kind": "auto",
   "modules": [
     {
       "enabled": true,
@@ -68,8 +68,18 @@
         "kind": "builtin"
       },
       "type": "mcp"
+    },
+    {
+      "enabled": true,
+      "name": "format-post",
+      "source": {
+        "kind": "local",
+        "path": ".claude/settings.json"
+      },
+      "type": "hook"
     }
   ],
-  "parentIds": [],
-  "version": "v0.1"
+  "parentIds": [
+    "81327230fcdd3d8200fa0af1d6dd53409092a49f"
+  ]
 }

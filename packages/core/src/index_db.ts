@@ -11,21 +11,24 @@ import type { Attribution, AttributionEventKind, Snapshot, SnapshotKind } from '
 // runtime; we do NOT inline it as a TS string. Inlining would create
 // two sources of truth that drift.
 
-// On open we apply 001 → 002 → 003 → 004 in order so the runtime
-// schema is always v4: snapshots without session_id and without
-// message, kind CHECK init|auto|tag, attributions table with
-// note_text + invariant + new event_kind enum, session_observation_
-// cache table for the hook's hot-path. Each migration is idempotent
-// through the version-gate in ensureSchema().
+// On open we apply 001 → 002 → 003 → 004 → 005 in order so the
+// runtime schema is always v5: snapshots without session_id and
+// without message, kind CHECK init|auto (no tag — see format.md
+// §4.2; tags are lightweight refs only), no version column,
+// attributions table with note_text + invariant + new event_kind
+// enum, session_observation_cache table for the hook's hot-path.
+// Each migration is idempotent through the version-gate in
+// ensureSchema().
 const SCHEMA_FILES: Array<{ from: number; file: string; to: number }> = [
   { from: 0, file: '001_init.sql',                       to: 1 },
   { from: 1, file: '002_v0_2_decoupling.sql',            to: 2 },
   { from: 2, file: '003_session_observation_cache.sql',  to: 3 },
   { from: 3, file: '004_v0_3_notes.sql',                 to: 4 },
+  { from: 4, file: '005_drop_tag_kind.sql',              to: 5 },
 ];
-const CURRENT_SCHEMA_VERSION = 4;
+const CURRENT_SCHEMA_VERSION = 5;
 const HARNESS_FORMAT_VERSION = '0.3';
-const WRITER_NAME = '@harness/core@0.3.0';
+const WRITER_NAME = '@harness/core@0.3.1';
 
 // node:sqlite emits an ExperimentalWarning on first DatabaseSync() call in
 // Node 22-24. Suppress only that specific warning so we don't pollute
@@ -99,13 +102,13 @@ export class IndexDb {
     this.db
       .prepare(
         `INSERT INTO snapshots
-           (id, branch, kind, version, code_pin, apm_lock_hash,
+           (id, branch, kind, code_pin, apm_lock_hash,
             author, created_at, format_version,
             model, permission_mode)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
-        snap.id, snap.branch, snap.kind, snap.version ?? null,
+        snap.id, snap.branch, snap.kind,
         snap.codePin, snap.apmLockHash,
         snap.author ?? null, snap.createdAt,
         snap.formatVersion ?? HARNESS_FORMAT_VERSION,
@@ -380,7 +383,6 @@ export class IndexDb {
       formatVersion: row.format_version,
       modules: mods.map(modFromRow),
     };
-    if (row.version !== null) out.version = row.version;
     if (row.author !== null) out.author = row.author;
     if (row.model !== null) out.model = row.model;
     if (row.permission_mode !== null) out.permissionMode = row.permission_mode;
@@ -505,7 +507,6 @@ interface SnapshotRow {
   id: string;
   branch: string;
   kind: SnapshotKind;
-  version: string | null;
   code_pin: string | null;
   apm_lock_hash: string | null;
   author: string | null;

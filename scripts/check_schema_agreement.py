@@ -24,15 +24,16 @@ SQL_001 = os.path.join(ROOT, "spec", "schema", "001_init.sql")
 SQL_002 = os.path.join(ROOT, "spec", "schema", "002_v0_2_decoupling.sql")
 SQL_003 = os.path.join(ROOT, "spec", "schema", "003_session_observation_cache.sql")
 SQL_004 = os.path.join(ROOT, "spec", "schema", "004_v0_3_notes.sql")
+SQL_005 = os.path.join(ROOT, "spec", "schema", "005_drop_tag_kind.sql")
 JSCH = os.path.join(ROOT, "spec", "schema", "snapshot.schema.json")
 
 
 def _setup_sql():
-    """Apply 001 → 002 → 003 → 004 to a fresh in-memory DB. Tests run
-    against the post-migration v4 schema — the actual shape v0.3 clients
-    will see."""
+    """Apply 001 → 002 → 003 → 004 → 005 to a fresh in-memory DB.
+    Tests run against the post-migration v5 schema — the actual shape
+    v0.3.1 clients will see."""
     conn = sqlite3.connect(":memory:")
-    for path in (SQL_001, SQL_002, SQL_003, SQL_004):
+    for path in (SQL_001, SQL_002, SQL_003, SQL_004, SQL_005):
         with open(path) as f:
             conn.executescript(f.read())
     conn.execute(
@@ -112,12 +113,14 @@ CASES = [
 
 def _check_snapshot_kind_agreement(conn, validator) -> tuple[int, int]:
     """Verify snapshot.kind enum agrees between SQL CHECK and JSON Schema
-    after the v0.3.0 migration. Returns (passed, failed)."""
+    after the v0.3.1 migration. Returns (passed, failed)."""
     cases = [
         ("init",   True),
         ("auto",   True),
-        ("tag",    True),
-        # rejected: v0.2 'manual' was renamed to 'auto'; v0.1.x kinds gone too
+        # rejected post-005: tag was the v0.3.0 kind, dropped in v0.3.1
+        # (tags are lightweight refs only — format.md §4.2). v0.2's
+        # 'manual' was renamed to 'auto' in v0.3.0; v0.1.x kinds gone.
+        ("tag",    False),
         ("manual", False),
         ("edit",   False),
         ("fork",   False),
@@ -142,8 +145,6 @@ def _check_snapshot_kind_agreement(conn, validator) -> tuple[int, int]:
             "codePin": None, "createdAt": "2026-01-01T00:00:00.000Z",
             "apmLockHash": None, "modules": [],
         }
-        if kind_val == "tag":
-            blob["version"] = "v1"
         json_ok = len(list(validator.iter_errors(blob))) == 0
         ok = (sql_ok == json_ok == expected)
         flag = "ok" if ok else "FAIL"
@@ -232,7 +233,7 @@ def main() -> int:
 
     print(f"\nTotal: {pass_total} passed, {fail_total} failed.")
     if rc == 0:
-        print("All cases agree across SQL CHECK and JSON Schema (post-004 v0.3.0 schema).")
+        print("All cases agree across SQL CHECK and JSON Schema (post-005 v0.3.1 schema).")
     else:
         print("AGREEMENT FAILURE — SQL CHECK and JSON Schema have drifted.")
     return rc

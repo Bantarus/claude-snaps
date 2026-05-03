@@ -144,8 +144,10 @@ export class Repo {
    * (`setBranch(name, returnedId)`).
    *
    * @internal — new consumers SHOULD use `observe()` (the v0.2.0
-   * decoupled API). This method stays exported for migration tooling
-   * and direct CLI commands that mint specific snapshot kinds (`tag`).
+   * decoupled API) or `note()` (v0.3.0). This method stays exported
+   * for migration tooling and other writers that need direct blob
+   * control. v0.3.1 has only `init` and `auto` kinds; tags are
+   * lightweight refs, not snapshots (format.md §4.2).
    */
   writeSnapshot(snap: Snapshot | Omit<Snapshot, 'id'>): Snapshot {
     const written = writeSnapshot(this.harnessDir, snap);

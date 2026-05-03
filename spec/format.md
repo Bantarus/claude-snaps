@@ -1,6 +1,6 @@
 # `.harness/` — Agent harness lineage format
 
-> **Status:** Working Draft v0.3.0 — unstable, may change without notice until v1.0.
+> **Status:** Working Draft v0.3.1 — unstable, may change without notice until v1.0.
 > **Editors:** the harness-snaps authors.
 > **Format:** Markdown, JSON Schema 2020-12, SQLite schema (SQL DDL).
 > **Conformance terminology:** [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119) (MUST / SHOULD / MAY).
@@ -130,7 +130,7 @@ Required top-level fields:
 | `id` | string (40-hex) | Filename derives from this. |
 | `parentIds` | array of strings (40-hex) | 0=init, 1=normal, 2=merge (reserved). |
 | `branch` | string | The branch the snapshot was created on. |
-| `kind` | string enum | `init` \| `auto` \| `tag`. See §2.2. |
+| `kind` | string enum | `init` \| `auto`. See §2.2. |
 | `codePin` | string (40-hex) or `null` | Git sha at snapshot time, or `null` if not in a git repo. |
 | `createdAt` | string (ISO 8601 UTC, ms) | Pattern: `YYYY-MM-DDTHH:MM:SS.sssZ`. |
 | `modules` | array of `Module` | See §2.4. |
@@ -140,7 +140,6 @@ Optional top-level fields:
 | Field | Type | Notes |
 |---|---|---|
 | `formatVersion` | string | Default `"0.3"` if absent. See §9. |
-| `version` | string \| `null` | REQUIRED on `kind:"tag"`; SHOULD be null otherwise. |
 | `model` | string \| `null` | Model id reported by the host on SessionStart / UserPromptSubmit (e.g. `"claude-opus-4-7"`). Optional; pre-amendment snapshots and non-hook writers omit it. Pass-through; not normalized. |
 | `permissionMode` | string \| `null` | Permission mode reported by the host on SessionStart / UserPromptSubmit (e.g. `"default"`, `"plan"`, `"acceptEdits"`). Optional; pre-amendment snapshots and non-hook writers omit it. Pass-through; not normalized. |
 | `apmLockHash` | string \| `null` | `sha256:<64-hex>` of `apm.lock.yaml` bytes; see [apm-integration.md](apm-integration.md). |
@@ -166,6 +165,15 @@ modules)` at read time, never stored. The format stays small; UX
 surfaces evolve independently. There is no automated migration from
 v0.2.x — see §9.6.
 
+**Removed in v0.3.1:** `version` and the `tag` value of `kind`.
+Snapshots represent composition observations, period; promotion
+events ("v0.4 is the version we're shipping") are recorded in
+`refs/tags/<name>` (lightweight refs, see §4.2), not as snapshots
+with a special kind and a version string. The `version` field's only
+purpose was annotating tag-kind snapshots, so it goes with them. v0.3.0
+was a brief draft state where §2.2 (tag as kind) and §4.2 (tags as
+lightweight refs) disagreed; v0.3.1 resolves toward §4.2 — see §9.7.
+
 Unknown top-level fields MUST be preserved on round-trip per §9.
 
 ### 2.2 `kind`
@@ -173,8 +181,16 @@ Unknown top-level fields MUST be preserved on round-trip per §9.
 | Value | Meaning |
 |---|---|
 | `init` | First snapshot of a harness. `parentIds` MUST be empty. |
-| `auto` | Any composition-change capture. Covers hook-driven captures (SessionStart / UserPromptSubmit observed a new composition) and CLI captures (`harness snap`, `harness note`). |
-| `tag` | Promotion to a named version. `version` MUST be set. |
+| `auto` | Any composition-change capture. Covers hook-driven captures (SessionStart / UserPromptSubmit observed a new composition) and CLI captures (`harness snap`). |
+
+Snapshots represent **composition observations**, period. Events that
+*promote* (a tag is applied), *reference* (a branch is created), or
+*annotate* (a user attached a note) compositions are recorded
+elsewhere — `refs/tags/`, `refs/heads/`, and the `attributions` table
+respectively (§4, §2.7). Adding more snapshot kinds for these events
+would make snapshots mean things beyond their composition; v0.3.1 is
+deliberate that snapshots stay content-addressable observations and
+nothing more.
 
 What makes a snapshot a "fork" (in the v0.1.x sense) is the new branch ref
 pointing at it, not a structural property of the snapshot. Readers MUST
@@ -189,6 +205,12 @@ name reflects what the kind actually means: "the writer captured
 composition automatically; the snapshot's identity is its content."
 Pre-v0.3.0 blobs with `kind: "manual"` are not auto-migrated (§9.6); a
 v0.3.0 reader treats them as a major-version mismatch per §9.1.
+
+**Removed in v0.3.1:** `tag` kind. Tags are lightweight refs only
+(§4.2); a tag is `refs/tags/<name>` containing the id of an existing
+snapshot. No new snapshot is written when a tag is applied. v0.3.0
+briefly listed `tag` as a kind with a required `version` field; the
+field and the kind are both gone in v0.3.1 — see §9.7.
 
 **Removed in v0.2.0:** `edit`, `auto`, `fork` (the v0.1.x kinds). All
 collapsed to `manual` in v0.2.0 and now collapse to `auto` in v0.3.0.
@@ -465,7 +487,6 @@ All other fields participate in canonical bytes derivation, including:
   checking out different lineage. Stripping these would collapse the
   DAG into a content graph — a weaker structure than what the spec
   describes.
-- `version` — only present on `tag` snapshots; structural.
 - `apmLockHash` — structural despite being a hash itself. APM-source
   modules' identities depend on the lockfile bytes; two snapshots with
   the same `modules` array but different `apmLockHash` mean a module's
@@ -478,13 +499,13 @@ There is no `message` field in v0.3.0 (§2.1, §2.7). Snapshots have no
 free-form text; user annotations are attribution events.
 
 The dedup rule that emerges: **same `(modules, kind, parentIds, branch,
-version, apmLockHash, formatVersion, author)` produces the same snapshot
-id**. Two `observe()` calls (§2.7) against an unchanged composition
-therefore append attribution events referencing the existing snapshot,
-never write a new blob, and never advance any ref. A `harness snap
-"<note>"` against an unchanged composition appends a `note` attribution
-row referencing the existing snapshot — same outcome on the snapshot
-table, plus one annotation row.
+apmLockHash, formatVersion, author)` produces the same snapshot id**.
+Two `observe()` calls (§2.7) against an unchanged composition therefore
+append attribution events referencing the existing snapshot, never write
+a new blob, and never advance any ref. A `harness snap "<note>"` against
+an unchanged composition appends a `note` attribution row referencing
+the existing snapshot — same outcome on the snapshot table, plus one
+annotation row.
 
 ### 3.2 Canonical JSON
 
@@ -585,7 +606,7 @@ include this vector in their unit tests.
 | Length | Meaning |
 |---|---|
 | 0 | Init snapshot. `kind` MUST be `"init"`. |
-| 1 | Normal `auto` / `tag` snapshot. The single parent is the previous tip of the snapshot's branch. |
+| 1 | Normal `auto` snapshot. The single parent is the previous tip of the snapshot's branch. |
 | 2 | Merge. **Reserved**; not produced in v0.3. **Readers MUST tolerate.** A reader-compat fixture lives at [`examples/compat-fixtures/`](examples/compat-fixtures/) — load that example and confirm the merge node renders correctly to verify conformance. |
 
 Branch tips advance on new snapshots; they do **not** advance on
@@ -612,11 +633,16 @@ A branch ref is a file `refs/heads/<branch>` whose contents are exactly:
 
 (40 lowercase hex characters, then a single LF, no trailing whitespace.)
 
-Tag refs follow the same format under `refs/tags/<name>`. v0.3 supports only
-**lightweight refs** — no annotated tags, no reflog. The tag's `version`
-lives on the tagged snapshot itself; tag-level free-form text is captured
-as a `note` attribution event (§2.7) attached to the tagged snapshot, not
-on the snapshot blob. Annotated tags and a reflog are v0.4 candidates (§9.4).
+Tag refs follow the same format under `refs/tags/<name>`. **Tags are
+lightweight refs** — a tag is just a name in `refs/tags/` containing
+the id of an existing snapshot. Applying a tag does NOT write a new
+snapshot (no "tag-kind" snapshot exists in v0.3.1; see §2.2). This is
+normative, not a v0.3 limitation: snapshots represent compositions and
+tags are pointers, by design. Free-form text associated with a tag is
+captured as a `note` attribution event (§2.7) attached to the tagged
+snapshot. Any future "annotated tags" mechanism (a v0.4+ design
+discussion) would introduce a separate artifact alongside refs, NOT a
+new snapshot kind — see §9.4.
 
 A branch's tip MAY be any snapshot in the DAG, not necessarily a leaf. Tools
 rendering the lineage MUST handle this (a branch may be "behind" a visible
@@ -689,17 +715,17 @@ After step 2, the repository is no longer empty.
 ### 4.5 Worked DAG (from `examples/team-shared/`)
 
 ```
-init      v0.3 (main)        <id1>
-  └── auto                   <id2>
-       └── tag v0.4 (main)   <id3>  ← refs/heads/main
-            └── auto (exp)   <id4>
-                 └── auto    <id5>  ← refs/heads/experimental
+init                          <id1>  ← refs/heads/main, refs/tags/v0.3
+  └── auto                    <id2>  ← refs/tags/v0.4 (no new snapshot for the tag)
+       └── auto (experimental) <id3>
+            └── auto           <id4>  ← refs/heads/experimental
 ```
 
-`refs/tags/v0.4` points at the same snapshot as the branch tip — that is the
-defining relationship of a `tag` snapshot. The fork onto `experimental` is a
-plain `auto`-kind snapshot whose new branch ref is what makes it a fork; see
-§2.2 on why `kind` does not encode "fork."
+`refs/tags/v0.4` points directly at `<id2>` — applying the tag did
+NOT write a new snapshot (§4.2; no tag-kind in v0.3.1). `refs/heads/main`
+also points at `<id2>`. The fork onto `experimental` is a plain `auto`
+snapshot whose new branch ref is what makes it a fork; see §2.2 on why
+`kind` does not encode "fork."
 
 ### 4.6 Session attribution and the SessionStart firing on resume
 
@@ -749,9 +775,9 @@ when initializing or migrating. Paraphrasing the schema in code is non-conformin
 
 | Table | Purpose |
 |---|---|
-| `_schema` | Single row: schema version (currently `4`). |
+| `_schema` | Single row: schema version (currently `5`). |
 | `_meta` | Writer-stamped metadata (`format_version`, `created_by`, …). Non-normative. |
-| `snapshots` | One row per snapshot blob. `id` is the primary key. **No `session_id` column** (dropped in v0.2.0); **no `message` column** (dropped in v0.3.0 by `004_v0_3_notes.sql`). |
+| `snapshots` | One row per snapshot blob. `id` is the primary key. **No `session_id` column** (dropped in v0.2.0); **no `message` column** (dropped in v0.3.0 by `004_v0_3_notes.sql`); **no `version` column** (dropped in v0.3.1 by `005_drop_tag_kind.sql`). |
 | `snapshot_parents` | Edges `(child_id, parent_id, parent_index)`. |
 | `snapshot_modules` | One row per `(snapshot_id, position, module)`. |
 | `attributions` | One row per `(sessionId, snapshotId, observedAt, eventKind)` event. Carries optional `note_text` (v0.3.0). See §5.4. |
@@ -932,8 +958,8 @@ observed_at, event_kind)` and atomically update `lineage.sqlite`.
 
 ### 9.1 Spec versioning
 
-This document is `0.3.0`. Snapshot blobs MAY include `formatVersion`. If
-absent, treat as `"0.3"`.
+This document is `0.3.1`. Snapshot blobs MAY include `formatVersion`. If
+absent, treat as `"0.3"` (the MAJOR.MINOR family).
 
 | Reader sees | Reader behavior |
 |---|---|
@@ -942,12 +968,20 @@ absent, treat as `"0.3"`.
 | Different major (≥1.0 vs 0.x, vs 0.3 etc.) | MUST refuse unless the reader implements that major. |
 
 The 0.1 → 0.2 transition was a major bump (`sessionId` removed; `kind`
-enum reshaped). The 0.2 → 0.3 transition is also a major bump:
-`message` is removed from the snapshot blob entirely (annotations are
-now first-class attribution events; see §2.7) and the `kind` enum
-renames `manual` to `auto`. v0.2.x readers MUST refuse v0.3.x blobs and
-vice versa. Migration from v0.1.x → v0.2.0 is described in §9.5; there
-is **no automated migration** from v0.2.x → v0.3.0 — see §9.6.
+enum reshaped). The 0.2 → 0.3 transition was also a major bump:
+`message` removed; `kind` enum renamed `manual` → `auto`. v0.2.x readers
+MUST refuse v0.3.x blobs and vice versa. Migration from v0.1.x → v0.2.0
+is described in §9.5; there is **no automated migration** from v0.2.x →
+v0.3.0 — see §9.6.
+
+The 0.3.0 → 0.3.1 transition is documented as a **patch bump** despite
+removing the `tag` kind and the `version` field (which §9.3 doctrine
+would normally classify as major). The justification: v0.3.0 was a
+brief draft state with internal inconsistency between §2.2 (tag as
+kind) and §4.2 (tags as lightweight refs); no external consumer ever
+held v0.3.0 data, and v0.3.1 resolves the inconsistency toward §4.2.
+See §9.7 for the full transition narrative and the SQL/blob
+considerations.
 
 ### 9.2 Forward-compat: unknown fields and variants
 
@@ -1018,7 +1052,9 @@ Non-normative; recorded for orientation only.
   Each gains a corresponding attribution `eventKind` per §2.7.
 - Storing local-source module file content inside the snapshot blob
   (or as side-blobs) so `kind: "local"` reproduction is byte-exact.
-- Annotated tags and a reflog.
+- A reflog (history of ref movements). If "annotated tags" enter the
+  design conversation, they would land as a separate artifact alongside
+  refs, NOT as a snapshot kind (per the §2.2 / §4.2 commitment).
 - The `harness reproduce` / `harness checkout --apply` reproducer that
   materializes a snapshot's modules into the working tree (long-deferred
   prompt D from the v0.1 plan).
@@ -1100,3 +1136,64 @@ tools refuse them per §9.1. There is no plan to add a v0.2 → v0.3
 migrator: the cost of a hand-built migration tool exceeds the value of
 re-importing data that was already captured in service of feedback
 loops the v0.3 design supersedes.
+
+### 9.7 v0.3.0 → v0.3.1: drop `tag` kind + `version` field
+
+v0.3.0 was a brief draft state with internal inconsistency: §2.2
+listed `tag` as a snapshot kind with required `version`, while §4.2
+described tags as lightweight refs. The CLI implemented §4.2 (`harness
+tag` writes `refs/tags/<name>`, no new snapshot); the example
+generator (`scripts/build_examples.py`) implemented §2.2 (writing
+`kind: "tag"` snapshot blobs into every example fixture). Spec
+readers had to handle both interpretations.
+
+v0.3.1 resolves toward §4.2: tags are lightweight refs, period. The
+`tag` kind value and the `version` field are removed. Snapshots
+represent composition observations; promotion events live in
+`refs/tags/`, not in snapshot kinds. This is the same architectural
+discipline that drove the v0.3.0 removal of `message` (snapshots
+don't mean things beyond their composition).
+
+**Why a patch bump despite §9.3 "removing an enum value is a major
+bump" doctrine:**
+
+- v0.3.0 was never shipped to external consumers. Its lifetime was
+  the brief window between the v0.3 cutover commit and the v0.3.1
+  cleanup; only the developer who landed both commits ever held
+  v0.3.0 data.
+- The CLI's actual behavior in v0.3.0 produced **zero** `tag`-kind
+  snapshots — `harness tag` already wrote lightweight refs only. The
+  only v0.3.0 sites that ever produced `tag`-kind snapshots were the
+  example-fixture generator and any reader/writer that mirrored §2.2.
+- The §9.3 doctrine exists to protect downstream readers. With no
+  downstream readers of v0.3.0, the protection has nothing to
+  preserve.
+
+The v0.3.0 → v0.3.1 schema migration (`spec/schema/005_drop_tag_kind.sql`):
+
+1. Reshapes the `snapshots` table CHECK constraint to
+   `kind IN ('init', 'auto')`.
+2. Drops the `version` column (its only purpose was annotating tag-
+   kind snapshots).
+3. Drops any `kind = 'tag'` rows that exist (no-op for real CLI users
+   per the previous bullet; logs a notice if any are found).
+4. Bumps `_schema.version` to 5.
+
+The migration does NOT rewrite snapshot blob files on disk. A v0.3.0
+`.harness/` that ran the example-generator would have orphan
+`<aa>/<rest>.json` files for the dropped tag-kind blobs after the
+migration; they're harmless (not loaded by `harness reindex`) and
+can be deleted manually. Real v0.3.0 CLI users have no such orphans.
+
+The supported path for anyone who somehow held v0.3.0 example data:
+
+1. Optionally back up `.harness/snapshots/` for forensic value.
+2. Run any v0.3.1 tool against the directory; it migrates the SQLite
+   automatically on `IndexDb.open()`.
+3. Optionally `harness reindex` to rebuild the SQLite from on-disk
+   blobs, dropping any orphaned tag-kind blobs in the process.
+
+The example fixtures under `spec/examples/` are regenerated by the
+v0.3.1 `build_examples.py` without tag-kind snapshots. Each fixture's
+underlying composition is reachable from the `refs/tags/<name>` ref
+directly.

@@ -38,7 +38,10 @@ describe('e2e: init → hook → log → diff', () => {
     const log1 = await runCli(['log'], { cwd });
     expect(log1.code).toBe(0);
     expect(log1.stdout.trim().split('\n').length).toBe(1);
-    expect(log1.stdout).toMatch(/init/);
+    // v0.3.1: init rows render as "<id> ★  (branch)" — the ★ glyph
+    // already conveys init; the redundant "init" summary string was
+    // stripped (was a v0.3.0 artifact).
+    expect(log1.stdout).toMatch(/★/);
 
     // 5. mutate the skill, fire the hook again
     writeFileSync(
@@ -87,7 +90,7 @@ describe('e2e: init → hook → log → diff', () => {
     const log = await runCli(['log'], { cwd });
     expect(log.code).toBe(0);
     // First-ever snapshot is kind=init; summarizeDiff renders "init".
-    expect(log.stdout).toMatch(/init/);
+    expect(log.stdout).toMatch(/★/);
   });
 
   test('install-hook installs both SessionStart and UserPromptSubmit entries', async () => {

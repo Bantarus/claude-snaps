@@ -1,11 +1,11 @@
 {
   "apmLockHash": "sha256:0a057f4f0a9475339e774ece9a656c561826bee320894f3f775c1a805858c880",
-  "author": "alex@example.com",
-  "branch": "experimental",
+  "author": "ben@example.com",
+  "branch": "main",
   "codePin": "a3f9c1ef2244c3e85d10b0a6b7d52f0911aabbcc",
-  "createdAt": "2026-04-30T15:18:00.000Z",
+  "createdAt": "2026-04-30T12:04:12.000Z",
   "formatVersion": "0.3",
-  "id": "bd0e0cc3807d73a2e7990a9e7f04ab10c6d1833e",
+  "id": "9cf3b08356e1657933c2016b402b3d214e43dcc6",
   "kind": "auto",
   "modules": [
     {
@@ -113,18 +113,9 @@
         "kind": "builtin"
       },
       "type": "mcp"
-    },
-    {
-      "enabled": true,
-      "name": "haiku-research",
-      "source": {
-        "kind": "local",
-        "path": ".claude/agents/haiku-research.md"
-      },
-      "type": "chatmode"
     }
   ],
   "parentIds": [
-    "5750b9241c76f3c0ed746fb8e34dbc013ade53b5"
+    "741a33a39d1e4b324a1a746662124cefe069535d"
   ]
 }

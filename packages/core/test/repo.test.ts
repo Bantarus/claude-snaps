@@ -47,13 +47,15 @@ describe('Repo.init / Repo.open', () => {
 });
 
 describe('Repo on team-shared example', () => {
-  test('reindex populates the db; log returns 5 snapshots', () => {
+  test('reindex populates the db; log returns 4 snapshots', () => {
     const proj = copyExample('team-shared');
     const repo = Repo.open(proj);
     try {
       repo.reindex();
       const all = repo.log();
-      expect(all.length).toBe(5);
+      // v0.3.1: team-shared has 4 snapshots (v0.3.0 had 5; the
+      // tag-kind snapshot was dropped — tags are lightweight refs).
+      expect(all.length).toBe(4);
       // Most recent first
       expect(all[0]!.createdAt >= all[1]!.createdAt).toBe(true);
     } finally {
@@ -86,14 +88,16 @@ describe('Repo on team-shared example', () => {
     }
   });
 
-  test('lca of main branch tip and experimental branch tip is the v0.4 tag', () => {
+  test('lca of main branch tip and experimental branch tip is the v0.4-tagged snapshot', () => {
     const proj = copyExample('team-shared');
     const repo = Repo.open(proj);
     try {
-      const main = repo.branchTip('main'); // v0.4 tag node
+      const main = repo.branchTip('main'); // v0.4 ref → main tip → 9cf3b083
       const exp = repo.branchTip('experimental');
       const lcaId = repo.lca(main, exp);
-      expect(lcaId).toBe('b7845e7a63d3e82701523c97c2b5c9c89f9a2958'); // v0.4 tag
+      // v0.3.1: 9cf3b083 is the auto snapshot the v0.4 lightweight tag
+      // ref points at. main also points there. experimental forks from it.
+      expect(lcaId).toBe('9cf3b08356e1657933c2016b402b3d214e43dcc6');
     } finally {
       repo.close();
     }

@@ -39,12 +39,12 @@ function stableDump(dbPath: string): string {
 }
 
 describe('IndexDb.open + ensureSchema', () => {
-  test('opening fresh creates schema v4, ensures _schema row, stamps _meta', () => {
+  test('opening fresh creates schema v5, ensures _schema row, stamps _meta', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harness-fresh-'));
     const idx = IndexDb.open(dir);
     idx.close();
     const db = new DatabaseSync(join(dir, 'lineage.sqlite'), { readOnly: true });
-    expect(db.prepare('SELECT version FROM _schema').get()).toEqual({ version: 4 });
+    expect(db.prepare('SELECT version FROM _schema').get()).toEqual({ version: 5 });
     const meta = db.prepare('SELECT key FROM _meta').all() as { key: string }[];
     const keys = new Set(meta.map((r) => r.key));
     expect(keys.has('format_version')).toBe(true);
@@ -64,22 +64,25 @@ describe('IndexDb.open + ensureSchema', () => {
 });
 
 describe('IndexDb.reindex', () => {
-  test('reindex on team-shared example inserts all 5 snapshots, all parent edges, all module rows', () => {
+  test('reindex on team-shared example inserts all 4 snapshots, all parent edges, all module rows', () => {
     const dir = copyExample('team-shared');
     const idx = IndexDb.open(dir);
     const result = idx.reindex();
-    expect(result.added).toBe(5);
+    expect(result.added).toBe(4);
     expect(result.removed).toBe(0);
 
     const db = new DatabaseSync(join(dir, 'lineage.sqlite'), { readOnly: true });
-    expect(db.prepare('SELECT COUNT(*) AS n FROM snapshots').get()).toEqual({ n: 5 });
-    // Diamond? team-shared has 5 snapshots in a linear+fork shape (init→auto→tag→fork→auto on exp).
-    // Parents: init=0, auto=1, tag=1, fork=1, exp_auto=1. Total parent edges = 4.
-    expect(db.prepare('SELECT COUNT(*) AS n FROM snapshot_parents').get()).toEqual({ n: 4 });
-    // Modules: each of 5 snapshots has 11 modules (per build_examples.py modules_v04).
+    expect(db.prepare('SELECT COUNT(*) AS n FROM snapshots').get()).toEqual({ n: 4 });
+    // team-shared v0.3.1 has 4 snapshots in a linear+fork shape:
+    //   init → auto → fork(experimental) → auto(experimental).
+    // Parents: init=0, auto=1, fork=1, exp_auto=1. Total parent edges = 3.
+    // (The v0.3.0 fixture had a 5th tag-kind snapshot; dropped in v0.3.1
+    // since tags are lightweight refs only — see format.md §4.2 / §9.7.)
+    expect(db.prepare('SELECT COUNT(*) AS n FROM snapshot_parents').get()).toEqual({ n: 3 });
+    // Modules: each of 4 snapshots has 11 modules (per build_examples.py modules_v04).
     // Two of those snapshots are on experimental and have an extra module.
     const modCount = (db.prepare('SELECT COUNT(*) AS n FROM snapshot_modules').get() as { n: number }).n;
-    expect(modCount).toBeGreaterThanOrEqual(5 * 11);
+    expect(modCount).toBeGreaterThanOrEqual(4 * 11);
     db.close();
     idx.close();
   });
@@ -129,7 +132,7 @@ describe('IndexDb queries', () => {
     idx.reindex();
     const main = idx.listSnapshots({ branch: 'main' });
     const exp = idx.listSnapshots({ branch: 'experimental' });
-    expect(main.length).toBe(3);
+    expect(main.length).toBe(2);
     expect(exp.length).toBe(2);
     idx.close();
   });
@@ -138,10 +141,12 @@ describe('IndexDb queries', () => {
     const dir = copyExample('team-shared');
     const idx = IndexDb.open(dir);
     idx.reindex();
-    const snap = idx.getSnapshot('b7845e7a63d3e82701523c97c2b5c9c89f9a2958');
+    // 9cf3b083... is the auto snapshot that the v0.4 lightweight tag
+    // ref points at (v0.3.1 has no tag-kind snapshots; tags are refs).
+    const snap = idx.getSnapshot('9cf3b08356e1657933c2016b402b3d214e43dcc6');
     expect(snap).not.toBeNull();
-    expect(snap!.kind).toBe('tag');
-    expect(snap!.version).toBe('v0.4');
+    expect(snap!.kind).toBe('auto');
+    expect(snap!.branch).toBe('main');
     idx.close();
   });
 

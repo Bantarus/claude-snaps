@@ -18,15 +18,16 @@ codebase.
 
 | | |
 |---|---|
-| Version | **0.3.0** Working Draft |
+| Version | **0.3.1** Working Draft |
 | Stability | **Unstable.** May change without notice until v1.0. |
 | License | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Conformance | [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119) MUST / SHOULD / MAY |
-| What's locked | Filesystem layout (§1), required snapshot fields (§2.1), the `init`/`auto`/`tag` kind vocabulary (§2.2), attribution events including `note` (§2.7), id derivation (§3), DAG/refs/HEAD semantics (§4), SQL schema v4, type vocabulary aliases. |
+| What's locked | Filesystem layout (§1), required snapshot fields (§2.1), the `init`/`auto` kind vocabulary (§2.2), attribution events including `note` (§2.7), id derivation (§3), DAG/refs/HEAD semantics (§4) with tags as lightweight refs (§4.2), SQL schema v5, type vocabulary aliases. |
 | What may still move | Float canonicalization tightening, the `_meta` table fields, masked-path glob semantics, the `attributions.event_kind` enum (additions only via spec amendment). |
-| Out of scope for v0.3 | Local-source content storage, multi-machine sync semantics, annotated tags, reflog, merge-kind snapshots (parent length 2 is reserved but not produced), additional hook events (`PreCompact`, `SessionEnd`, `ConfigChange`), user-level capture (`~/.claude/`), the `harness reproduce` reproducer. |
+| Out of scope for v0.3 | Local-source content storage, multi-machine sync semantics, reflog, merge-kind snapshots (parent length 2 is reserved but not produced), additional hook events (`PreCompact`, `SessionEnd`, `ConfigChange`), user-level capture (`~/.claude/`), the `harness reproduce` reproducer. |
 | Migration from v0.1.x → v0.2.0 | Run `harness migrate`. Idempotent; deduplicates compositions that became byte-identical after `sessionId` removal. See [format.md §9.5](format.md#95-migration-from-v01x--v020-historical). |
 | Migration from v0.2.x → v0.3.0 | **No automated migration.** Back up `.harness/`, delete it, and re-init. Rationale in [format.md §9.6](format.md#96-v02x--v030-no-automated-migration). |
+| Migration from v0.3.0 → v0.3.1 | Automatic SQL migration (`005_drop_tag_kind.sql`) on next `IndexDb.open()`. v0.3.0 was a brief draft; the cleanup is a no-op for real CLI usage. See [format.md §9.7](format.md#97-v030--v031-drop-tag-kind--version-field). |
 
 ## Reading order
 
@@ -57,9 +58,9 @@ blob is real, content-addressable, and validates against
 | Example | Snapshots | Branches | Tags | APM? | Demonstrates |
 |---|---|---|---|---|---|
 | [empty/](examples/empty/) | 0 | 0 | 0 | n/a | A freshly-initialized `.harness/` (just `HEAD` + `config`). Pinned semantics in [format.md §4.4](format.md#44-the-empty-repository). |
-| [solo-no-apm/](examples/solo-no-apm/) | 5 | 1 (main) | 1 (v0.2) | no | Single-developer flow, all `local` / `builtin` modules, `apmLockHash: null` throughout. |
-| [solo-with-apm/](examples/solo-with-apm/) | 3 | 1 (main) | 1 (v0.1) | yes | All primitives sourced from APM, `apmLockHash` set, demonstrates the `apm` source variant. |
-| [team-shared/](examples/team-shared/) | 5 | 2 (main, experimental) | 1 (v0.4) | yes | Mix of APM (depths 1 and 2), local, and builtin modules. The fork onto `experimental` is a plain `auto` snapshot whose new branch ref defines the fork. |
+| [solo-no-apm/](examples/solo-no-apm/) | 4 | 1 (main) | 1 (v0.2) | no | Single-developer flow, all `local` / `builtin` modules, `apmLockHash: null` throughout. The v0.2 tag is a lightweight ref pointing at an existing `auto` snapshot — no tag-kind blob exists in v0.3.1. |
+| [solo-with-apm/](examples/solo-with-apm/) | 2 | 1 (main) | 1 (v0.1) | yes | All primitives sourced from APM, `apmLockHash` set, demonstrates the `apm` source variant. The v0.1 tag is a lightweight ref. |
+| [team-shared/](examples/team-shared/) | 4 | 2 (main, experimental) | 1 (v0.4) | yes | Mix of APM (depths 1 and 2), local, and builtin modules. The v0.4 tag is a lightweight ref; the fork onto `experimental` is a plain `auto` snapshot whose new branch ref defines the fork. |
 | [compat-fixtures/](examples/compat-fixtures/) | 5 | 1 (main) | 0 | n/a | **Reader-compat fixture.** Synthetic blobs writers do not produce: a merge node (`parentIds.length === 2`), and a module with an unknown `x-experimental-bundle` source kind. Used to verify a reader implements the forward-compat rules in [format.md §4.1](format.md#41-parents) and [§9.2](format.md#92-forward-compat-unknown-fields-and-variants). |
 
 `lineage.sqlite` is **omitted** from every example: it is a derivable index
