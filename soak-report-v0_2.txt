@@ -1,0 +1,160 @@
+========================================
+DOGFOOD SOAK AUDIT
+2026-05-02T16:25:03Z
+soak dir: ~/harness-dogfood-soak
+monorepo: ~/DEV/claude-snaps
+========================================
+
+1) harness log (full DAG, newest first)
+----------------
+5a118f74 ▶ (no message)  (main) code:53bba61
+ce1f6977 ▶ (no message)  (main) code:53bba61
+3e4719fc ▶ (no message)  (main) code:53bba61
+ef81077b ▶ (no message)  (experimental) code:53bba61
+dc8ef0b4 ▶ (no message)  (main) code:53bba61
+c01b008d ▶ (no message)  (main) code:53bba61
+02be1ead ▶ (no message)  (main) code:53bba61
+59b0f0d6 ▶ (no message)  (main) code:53bba61
+83baffec ★ (no message)  (main) code:53bba61
+
+
+2) Branches and tags
+----------------
+  branch: experimental
+  branch: main
+  tag:    v0.1
+  tag:    v0.2
+
+3) Snapshot count by kind
+----------------
+  init     1
+  manual   8
+  total    9
+
+4) Module composition trend (count per snapshot, by source.kind)
+----------------
+  created                  id         kind     branch         msg                              modules
+  ------------------------ ---------- -------- -------------- -------------------------------- -------------------------
+  2026-05-02T16:00:24.750Z 83baffec   init     main           (null)                           builtin:11, local:3
+  2026-05-02T16:02:01.044Z 59b0f0d6   manual   main           (null)                           builtin:11, local:4
+  2026-05-02T16:04:07.507Z 02be1ead   manual   main           (null)                           builtin:11, local:4
+  2026-05-02T16:06:47.863Z c01b008d   manual   main           (null)                           builtin:11, local:5
+  2026-05-02T16:07:54.053Z dc8ef0b4   manual   main           (null)                           builtin:11, local:8
+  2026-05-02T16:12:51.768Z ef81077b   manual   experimental   (null)                           builtin:11, local:8
+  2026-05-02T16:14:19.266Z 3e4719fc   manual   main           (null)                           builtin:11, local:8
+  2026-05-02T16:19:21.696Z ce1f6977   manual   main           (null)                           builtin:11, local:7
+  2026-05-02T16:20:04.266Z 5a118f74   manual   main           (null)                           builtin:11, local:11
+
+4b) Attribution events (v0.2)
+----------------
+  event_kind        count
+  ------------------------
+  session_start     17
+  user_prompt       18
+  total             35
+
+  session_id                        events  snapshots  first_seen
+  --------------------------------  ------  ---------  ------------------------
+  soak-reset-1777737624                  1          1  2026-05-02T16:00:24.750Z
+  d6340998-460d-43b5-b0fa-444e2132       2          1  2026-05-02T16:02:01.044Z
+  47c49608-f18a-438b-bf68-6da1c503       4          2  2026-05-02T16:04:07.507Z
+  57bb878e-056c-477d-a95f-cea35279       5          1  2026-05-02T16:07:54.053Z
+  3a5f4a5b-9647-4ec4-a029-1d1c507c       2          1  2026-05-02T16:12:51.768Z
+  2df06227-7717-48c1-8325-873feb93       2          1  2026-05-02T16:14:19.266Z
+  c02ee05a-e139-47eb-b985-f232a9a9       6          1  2026-05-02T16:14:29.423Z
+  48e5c422-e370-4103-a91a-2472e08f       3          2  2026-05-02T16:18:38.166Z
+  3ce25939-a8d8-4ae9-affa-53574cff       7          1  2026-05-02T16:20:04.266Z
+  5b6f38fa-e3de-484f-b298-34ad5c5e       1          1  2026-05-02T16:23:23.596Z
+  734c035b-a210-4376-820d-7ea1c132       2          1  2026-05-02T16:23:28.621Z
+
+5) Worked diffs
+----------------
+
+  diff v0.1 → v0.2 (the meaningful soak delta):
+    dc8ef0b4..5a118f74
+    + ✦ git-explain            (added)
+    + ✦ profile-bench            (added)
+    − ✦ test-runner            (removed)
+    + / /note            (added)
+    + ◇ terse            (added)
+
+    +4 added  −1 removed  ~0 changed
+
+  diff baseline → latest (full soak delta):
+    83baffec..5a118f74
+    + ✎ CLAUDE.md            (added)
+    + ◐ code-reviewer            (added)
+    + ✦ git-explain            (added)
+    ~ ✦ notes ? → ?  (changed)
+    + ✦ profile-bench            (added)
+    + / /note            (added)
+    + / /recap            (added)
+    + ⌥ filesystem            (added)
+    + ◇ terse            (added)
+
+    +8 added  −0 removed  ~1 changed
+
+6) Hook firings (Claude Code JSONL trail)
+----------------
+  jsonl dir: ~/.claude/projects/-home-bantarus-harness-dogfood-soak
+  019502eb  hook firings: 1
+  103caa5b  hook firings: 1
+  104b6f59  hook firings: 1
+  1a3de2d1  hook firings: 1
+  2df06227  hook firings: 1
+  3a5f4a5b  hook firings: 1
+  3b29a10d  hook firings: 1
+  3bdd66f1  hook firings: 1
+  3ce25939  hook firings: 1
+  47c49608  hook firings: 1
+  48e5c422  hook firings: 1
+  4b313d58  hook firings: 1
+  5113ed0d  hook firings: 1
+  57bb878e  hook firings: 1
+  5e399035  hook firings: 1
+  5ef5f33c  hook firings: 1
+  6257c408  hook firings: 0
+  684cfc4f  hook firings: 1
+  7092d637  hook firings: 1
+  734c035b  hook firings: 1
+  7769e7d5  hook firings: 0
+  7bb5ac2b  hook firings: 1
+  91c604ee  hook firings: 1
+  938cf0b2  hook firings: 1
+  a5bf975c  hook firings: 1
+  c02ee05a  hook firings: 0
+  c6daa3da  hook firings: 1
+  d6340998  hook firings: 1
+  e52b1067  hook firings: 1
+
+7) Spec gates (run from monorepo)
+----------------
+
+  schema agreement:
+    Total: 30 passed, 0 failed.
+    All cases agree across SQL CHECK and JSON Schema (post-002 v0.2.0 schema).
+
+  format-version-bump (vs HEAD):
+    ✓ no spec schema changes detected vs HEAD
+
+  canonical-501 byte-stability (v0.2.0 fixture):
+    ✓ byte-identical (cc645898beca440be69ed860eca4a2b24e25f29c4369f75c48f00d69d03de89d)
+
+8) Working tree vs git audit
+----------------
+  ✓ no orphan files (every file on disk is tracked or correctly ignored)
+  spec example blobs:  on disk=20 tracked=20 ✓
+
+9) Test gates
+----------------
+  packages/core test:       Tests  107 passed (107)
+  packages/cli test:       Tests  42 passed (42)
+  packages/hook test:       Tests  22 passed (22)
+
+========================================
+AUDIT END
+========================================
+
+NOTE: The original soak-report.txt at the repo root captures the
+v0.1.x soak (commit e1b0391). This file (soak-report-v0_2.txt)
+captures the v0.2.0 soak run on 2026-05-03.
