@@ -3,41 +3,50 @@ import { c } from '../format.js';
 import type { ParsedArgs } from '../main.js';
 
 /**
- * `harness snap [-m <message>] [--message <message>]`
+ * `harness snap "<note>"`
  *
- * Manual capture. Wraps `repo.observe({ eventKind: 'manual_snap',
- * sessionId: '<manual>', message })`. Per spec/format.md §2.7:
+ * Capture current composition (writing a new snapshot if novel) and
+ * attach a `note` attribution event carrying the user's text. Per
+ * spec/format.md §2.7, the note text is required — there is no
+ * anonymous CLI capture path.
  *
- * - With `-m`: a new snapshot is always written (the message
- *   participates in canonical bytes per §3.1, so the new id won't
- *   match any existing snapshot's id even if modules are unchanged).
- * - Without `-m`: composition-change detection runs in observe(); on
- *   unchanged composition only an attribution row is appended.
+ * Mechanics:
+ *   - Routes through `Repo.note({ sessionId: '<manual>', noteText })`.
+ *   - On unchanged composition: no new snapshot blob, no ref advance;
+ *     only the `note` row is appended.
+ *   - On changed composition: a new `auto`-kind snapshot is written
+ *     and the branch ref advances, then the `note` row attaches to it.
  *
- * The literal sessionId `<manual>` distinguishes manual snaps from
- * runtime sessions in attribution queries.
+ * The literal `<manual>` session id distinguishes CLI-driven notes
+ * from runtime sessions in `harness sessions` output. Cheap to change
+ * later if it bothers anyone.
  */
 export async function cmdSnap(parsed: ParsedArgs): Promise<number> {
-  const message =
-    typeof parsed.flags['m'] === 'string' ? parsed.flags['m'] :
-    typeof parsed.flags['message'] === 'string' ? parsed.flags['message'] :
-    null;
+  const noteText = parsed.positional[0];
+  if (typeof noteText !== 'string' || noteText.length === 0) {
+    process.stderr.write(
+      `harness snap: a note is required. Usage:\n  harness snap "<note>"\n`,
+    );
+    return 1;
+  }
+  if (parsed.positional.length > 1) {
+    process.stderr.write(
+      `harness snap: extra arguments — quote the note as a single string: "${parsed.positional.join(' ')}"\n`,
+    );
+    return 1;
+  }
 
   const repo = Repo.open(process.cwd());
   try {
     const before = repo.resolveHead();
-    const id = repo.observe({
-      sessionId: '<manual>',
-      eventKind: 'manual_snap',
-      ...(message !== null ? { message } : {}),
-    });
+    const id = repo.note({ sessionId: '<manual>', noteText });
     const isNew = before !== id;
+    const short = c.dim(id.slice(0, 8));
     if (isNew) {
-      const note = message !== null ? ` "${message}"` : '';
-      process.stdout.write(`Captured ${c.dim(id.slice(0, 8))}${note}\n`);
+      process.stdout.write(`Captured ${short} with note: "${noteText}"\n`);
     } else {
       process.stdout.write(
-        `No composition change since ${c.dim(id.slice(0, 8))}; attribution recorded.\n`,
+        `No composition change since ${short}; note attached to existing snapshot.\n`,
       );
     }
   } finally {

@@ -13,11 +13,11 @@ const COMPAT = resolve(SPEC_DIR, 'examples/compat-fixtures/.harness');
 //            │           ├──> MERGE ──> XEXT
 //            └──> RIGHT ─┘
 //
-const INIT  = '63fd857e22291331358626098a8799d9407b3da7';
-const LEFT  = '7ecec8977d86995bad83afdb1697e4738136702d';
-const RIGHT = 'a804c368a2b70d07ecbf84ec147e9bc43f2ccaa3';
-const MERGE = 'f38fafd22e99266348b486a48175c7774746b1a4';
-const XEXT  = 'c84bffff38793972bead06b9426a7990723b20c3';
+const INIT  = 'f5e6cac2653911ae8338cd58c683b5fbff9abf3c';
+const LEFT  = '12c376f5205e2fea493a4d647d6aa29fd05f53a1';
+const RIGHT = 'e04ee7fa25108b0b6fc4dc85e538d12545222e44';
+const MERGE = '29601377010793bc4576f2936ea9f04486948450';
+const XEXT  = '5baa811b40817396e15f8b8292659384809e6a4d';
 
 describe('dag.ancestorsOf — diamond DAG (Gate 2)', () => {
   test('ancestorsOf MERGE visits INIT exactly once (no double-visit via diamond)', () => {

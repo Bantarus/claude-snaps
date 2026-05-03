@@ -1,6 +1,6 @@
 # `.harness/` — Agent harness lineage format
 
-> **Status:** Working Draft v0.2.0 — unstable, may change without notice until v1.0.
+> **Status:** Working Draft v0.3.0 — unstable, may change without notice until v1.0.
 > **Editors:** the harness-snaps authors.
 > **Format:** Markdown, JSON Schema 2020-12, SQLite schema (SQL DDL).
 > **Conformance terminology:** [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119) (MUST / SHOULD / MAY).
@@ -69,16 +69,16 @@ Hard rules:
 - `HEAD`, `refs/heads/*`, `refs/tags/*` follow git's filename and content
   conventions for compatibility of mental model. Each ref file MUST contain a
   single snapshot id (40 lowercase hex chars) followed by a trailing LF.
-- Symbolic refs are restricted: in v0.2, only `HEAD` MAY be symbolic. All other
+- Symbolic refs are restricted: in v0.3, only `HEAD` MAY be symbolic. All other
   refs MUST be direct (a literal id).
 - `config` is TOML, not YAML, not JSON. Rationale: small, line-oriented,
   comments survive round-trips, no significant whitespace.
 - All on-disk paths MUST use forward-slash separators regardless of host OS.
 - All text files (`HEAD`, refs, `config`) MUST be UTF-8 with LF line endings.
 
-### 1.1 Capture scope: project-level only (v0.2)
+### 1.1 Capture scope: project-level only (v0.3)
 
-A v0.2 snapshot captures **only** primitives defined under the project's
+A v0.3 snapshot captures **only** primitives defined under the project's
 `<projectRoot>/.claude/` tree (plus `CLAUDE.md` / `AGENTS.md` at the project
 root). User-level config — `~/.claude/skills/`, `~/.claude/agents/`,
 `~/.claude/settings.json`, `~/.claude/CLAUDE.md`, etc. — is intentionally
@@ -86,7 +86,7 @@ root). User-level config — `~/.claude/skills/`, `~/.claude/agents/`,
 fires the hook.
 
 Rationale: snapshots are designed to be shared across machines (team-sync
-is a v0.3 candidate). Including per-developer user-level config would
+is a v0.4 candidate). Including per-developer user-level config would
 contaminate every shared snapshot with differences neither developer can
 change, defeating the comparability goal. The blind spot is by design:
 if a primitive must be reproducible on a different machine, it MUST live
@@ -96,7 +96,7 @@ Implementations MUST NOT walk `~/.claude/` or any non-project path during
 capture. Implementations MAY surface a one-time advisory note to the user
 when an active user-level primitive (skill, hook, etc.) is observed but
 not captured, but MUST NOT include it in the blob. User-level capture is
-a v0.3 candidate gated on team-sync semantics being designed.
+a v0.4 candidate gated on team-sync semantics being designed.
 
 ## 2. Snapshot blob format
 
@@ -130,8 +130,7 @@ Required top-level fields:
 | `id` | string (40-hex) | Filename derives from this. |
 | `parentIds` | array of strings (40-hex) | 0=init, 1=normal, 2=merge (reserved). |
 | `branch` | string | The branch the snapshot was created on. |
-| `kind` | string enum | `init` \| `manual` \| `tag`. See §2.2. |
-| `message` | string \| `null` | One-line summary, or `null` for hook-captured snapshots that have no user-supplied message. Multi-line strings MAY appear; readers MUST handle them. |
+| `kind` | string enum | `init` \| `auto` \| `tag`. See §2.2. |
 | `codePin` | string (40-hex) or `null` | Git sha at snapshot time, or `null` if not in a git repo. |
 | `createdAt` | string (ISO 8601 UTC, ms) | Pattern: `YYYY-MM-DDTHH:MM:SS.sssZ`. |
 | `modules` | array of `Module` | See §2.4. |
@@ -140,7 +139,7 @@ Optional top-level fields:
 
 | Field | Type | Notes |
 |---|---|---|
-| `formatVersion` | string | Default `"0.2"` if absent. See §9. |
+| `formatVersion` | string | Default `"0.3"` if absent. See §9. |
 | `version` | string \| `null` | REQUIRED on `kind:"tag"`; SHOULD be null otherwise. |
 | `model` | string \| `null` | Model id reported by the host on SessionStart / UserPromptSubmit (e.g. `"claude-opus-4-7"`). Optional; pre-amendment snapshots and non-hook writers omit it. Pass-through; not normalized. |
 | `permissionMode` | string \| `null` | Permission mode reported by the host on SessionStart / UserPromptSubmit (e.g. `"default"`, `"plan"`, `"acceptEdits"`). Optional; pre-amendment snapshots and non-hook writers omit it. Pass-through; not normalized. |
@@ -157,8 +156,15 @@ MUST preserve them on round-trip per §9.2.
 **Removed in v0.2.0:** `sessionId`. Snapshots are now session-independent
 — the same harness composition observed by two different sessions yields
 the same snapshot id. Session attribution is recorded separately in
-**Attribution events** (§2.7), stored in `lineage.sqlite` only. Migration
-from v0.1.x is described in §9.5.
+**Attribution events** (§2.7), stored in `lineage.sqlite` only.
+
+**Removed in v0.3.0:** `message`. Snapshots no longer carry free-form
+text. User annotations are first-class **attribution events** (`note`
+kind, see §2.7); display strings rendered by tools (e.g. the per-row
+diff summary in `harness log`) are computed from `(parentIds[0],
+modules)` at read time, never stored. The format stays small; UX
+surfaces evolve independently. There is no automated migration from
+v0.2.x — see §9.6.
 
 Unknown top-level fields MUST be preserved on round-trip per §9.
 
@@ -167,7 +173,7 @@ Unknown top-level fields MUST be preserved on round-trip per §9.
 | Value | Meaning |
 |---|---|
 | `init` | First snapshot of a harness. `parentIds` MUST be empty. |
-| `manual` | Any composition-change capture. Covers hook-driven captures (SessionStart / UserPromptSubmit observed a new composition) and CLI captures (`harness snap`). |
+| `auto` | Any composition-change capture. Covers hook-driven captures (SessionStart / UserPromptSubmit observed a new composition) and CLI captures (`harness snap`, `harness note`). |
 | `tag` | Promotion to a named version. `version` MUST be set. |
 
 What makes a snapshot a "fork" (in the v0.1.x sense) is the new branch ref
@@ -175,15 +181,17 @@ pointing at it, not a structural property of the snapshot. Readers MUST
 inspect refs and `parentIds` to understand DAG topology; `kind` is advisory
 metadata only.
 
-**Removed in v0.2.0:** `edit`, `auto`, `fork`. The `edit` / `auto`
-distinction had no semantic content (both meant "composition was
-captured"); `fork` was a kind on snapshots that were structurally
-identical to other manual snapshots. All three collapse to `manual`.
+**Renamed in v0.3.0:** `manual` → `auto`. The v0.2.0 vocabulary singled
+out CLI captures with the `manual` label, but a hook-driven capture and
+a `harness snap` produce structurally identical snapshots; the `manual`
+name suggested a meaningful distinction that did not exist. The `auto`
+name reflects what the kind actually means: "the writer captured
+composition automatically; the snapshot's identity is its content."
+Pre-v0.3.0 blobs with `kind: "manual"` are not auto-migrated (§9.6); a
+v0.3.0 reader treats them as a major-version mismatch per §9.1.
 
-Pre-v0.2.0 readers loading a v0.2.0 blob will see an unknown `kind` and
-SHOULD reject it as a major-version mismatch per §9.1. Pre-v0.2.0 blobs
-are migrated to the new vocabulary by `harness migrate` (§9.5):
-`edit` / `auto` / `fork` → `manual`; `init` and `tag` unchanged.
+**Removed in v0.2.0:** `edit`, `auto`, `fork` (the v0.1.x kinds). All
+collapsed to `manual` in v0.2.0 and now collapse to `auto` in v0.3.0.
 
 ### 2.3 `createdAt`, `codePin`, `apmLockHash`
 
@@ -250,7 +258,7 @@ Where the canonical set differs from APM, see
 
 ### 2.6 The `source` discriminator
 
-`source` is a tagged union on `kind`. In v0.2, three variants are defined:
+`source` is a tagged union on `kind`. In v0.3, three variants are defined:
 
 ```ts
 type ModuleSource =
@@ -346,26 +354,39 @@ All four variants appear in [examples/team-shared/.harness/snapshots/](examples/
 ### 2.7 Attribution events
 
 A snapshot records *what the harness composition was*, independent of who
-observed it. Sessions are recorded as **attribution events**: append-only
-rows linking a `(sessionId, snapshotId, observedAt, eventKind)` tuple.
-A session that traverses three distinct compositions over its lifetime
-produces three attribution rows pointing at three snapshots. A session
-that fires the hook 30 times against an unchanged composition produces
-30 attribution rows pointing at *one* snapshot.
+observed it and independent of any free-form annotation. Sessions are
+recorded as **attribution events**: append-only rows linking a
+`(sessionId, snapshotId, observedAt, eventKind)` tuple, optionally
+carrying a `noteText`. A session that traverses three distinct
+compositions over its lifetime produces three attribution rows pointing
+at three snapshots. A session that fires the hook 30 times against an
+unchanged composition produces 30 attribution rows pointing at *one*
+snapshot. A user who runs `harness snap "<note>"` against an unchanged
+composition produces a `note` attribution row pointing at the existing
+snapshot — no new blob, no ref advance.
 
 Attribution events live exclusively in `lineage.sqlite`; they have no
 on-disk blob form and are not content-addressable. Their schema is
 defined by [schema/001_init.sql](schema/001_init.sql) (the `attributions`
-table, added in migration `002_v0_2_decoupling.sql` — see §5.4).
+table, added in migration `002_v0_2_decoupling.sql` and extended with
+`note_text` in `004_v0_3_notes.sql` — see §5.4).
 
 **Event kinds.** The `eventKind` column takes one of these values:
 
-| Value | Meaning |
-|---|---|
-| `session_start` | Recorded when the SessionStart hook fired (fresh sessions only — resumed sessions skip this event). |
-| `user_prompt` | Recorded when the UserPromptSubmit hook fired. The dominant event kind in normal use. |
-| `manual_snap` | Recorded when the user ran `harness snap [-m <message>]`. The `sessionId` is the literal string `"<manual>"` to distinguish from runtime sessions. If `-m` was supplied, the new snapshot's `message` field carries it; per §3.1 the message participates in canonical bytes, so a manual snap with a unique message always produces a new snapshot id distinct from any existing one — even when modules are unchanged. A manual snap WITHOUT `-m` against an unchanged composition follows the no-change path: attribution only, no new blob. |
-| `migrated` | Recorded by `harness migrate` when backfilling attribution data from a v0.1.x snapshot's `sessionId` field (§9.5). |
+| Value | Meaning | `noteText` |
+|---|---|---|
+| `session_start` | Recorded when the SessionStart hook fired. The `source` column carries `startup` / `resume` / `clear` / `compact` from the hook stdin payload. | MUST be null. |
+| `user_prompt` | Recorded when the UserPromptSubmit hook fired. The dominant event kind in normal use. | MUST be null. |
+| `manual_capture` | Recorded when a writer captured composition without an annotation. Reserved for non-CLI writers (e.g. an IDE plugin's "snapshot now" button). The CLI's `harness snap` always carries a note (see `note` below); there is no anonymous CLI capture path. | MUST be null. |
+| `note` | Recorded when the user attached an annotation to a snapshot via `harness snap "<text>"`. The `sessionId` is the literal string `"<manual>"` to distinguish from runtime sessions. If composition changed since the previous fire, a new snapshot is written first; the `note` row references whichever snapshot (existing or new) carries the current composition. | MUST be non-null. |
+| `migrated` | Reserved for backfill events written by migration tooling. Not emitted by any v0.3 writer; readers MUST tolerate the value for forward/backward compatibility. | MUST be null. |
+
+The `noteText` invariant — non-null iff `eventKind = 'note'` — MUST be
+enforced both by the SQL CHECK constraint (`004_v0_3_notes.sql`) and at
+write time in the writer. Defense in depth: a code path that constructs
+an event with the wrong shape fails fast in TypeScript before reaching
+SQL; a corrupted database that ever gets a misshapen row is rejected by
+the CHECK on next write.
 
 Forward-compat rule: unknown `eventKind` values MUST be preserved on
 read/write. Readers SHOULD log a warning naming the unknown kind. New
@@ -388,11 +409,21 @@ other event kinds, `source` is null.
    branch tip>]`), advances the branch ref, then appends the attribution
    row pointing at the new id.
 
+`harness snap "<text>"` follows the same path, then unconditionally
+appends a `note` attribution carrying the user's text. If composition
+was unchanged, the only on-disk effect is that one extra attribution
+row; if composition changed, both the new snapshot blob and a `note`
+row land in one transaction.
+
 This is the load-bearing mechanism: snapshots accumulate only on
-composition change, while attribution events accumulate on every hook
-fire. The query "what did session N observe, in chronological order?"
-is `SELECT snapshot_id, observed_at, event_kind FROM attributions
-WHERE session_id = ? ORDER BY observed_at`.
+composition change; attribution events accumulate on every hook fire
+and every user note. The two load-bearing queries (§5.4) are:
+
+- **Trajectory** — `WHERE session_id = ? ORDER BY observed_at`.
+  Returns the ordered series of `(snapshot, when, kind, note)` events.
+- **Cross-session notes** — `WHERE event_kind = 'note' AND snapshot_id = ?
+  ORDER BY observed_at`. Returns every annotation ever attached to a
+  snapshot, regardless of which session attached it.
 
 ## 3. Snapshot ID derivation
 
@@ -435,11 +466,6 @@ All other fields participate in canonical bytes derivation, including:
   DAG into a content graph — a weaker structure than what the spec
   describes.
 - `version` — only present on `tag` snapshots; structural.
-- `message` — when set on a `manual` snapshot, a user-supplied message
-  is the *reason* this snapshot exists distinct from a no-change
-  observation. Two manual captures of identical composition with
-  different messages MUST produce different snapshots; the message is
-  the user's annotation of "this moment is meaningful."
 - `apmLockHash` — structural despite being a hash itself. APM-source
   modules' identities depend on the lockfile bytes; two snapshots with
   the same `modules` array but different `apmLockHash` mean a module's
@@ -448,12 +474,17 @@ All other fields participate in canonical bytes derivation, including:
 - `formatVersion`, `author` — additive metadata; preserved on
   round-trip per §9.2 and participate in identity.
 
+There is no `message` field in v0.3.0 (§2.1, §2.7). Snapshots have no
+free-form text; user annotations are attribution events.
+
 The dedup rule that emerges: **same `(modules, kind, parentIds, branch,
-version, message, apmLockHash, formatVersion, author)` produces the
-same snapshot id**. Two `observe()` calls (§2.7) against an unchanged
-composition with no new message therefore append attribution events
-referencing the existing snapshot, never write a new blob, and never
-advance any ref.
+version, apmLockHash, formatVersion, author)` produces the same snapshot
+id**. Two `observe()` calls (§2.7) against an unchanged composition
+therefore append attribution events referencing the existing snapshot,
+never write a new blob, and never advance any ref. A `harness snap
+"<note>"` against an unchanged composition appends a `note` attribution
+row referencing the existing snapshot — same outcome on the snapshot
+table, plus one annotation row.
 
 ### 3.2 Canonical JSON
 
@@ -496,11 +527,10 @@ bytes and the digest exactly.
 
 ```json
 {
-  "formatVersion": "0.2",
+  "formatVersion": "0.3",
   "parentIds": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
   "branch": "main",
-  "kind": "manual",
-  "message": "+ postgres MCP",
+  "kind": "auto",
   "codePin": "b22e80aa12cc34dd56ee78ff90aabbccddeeff00",
   "createdAt": "2026-04-29T18:20:00.000Z",
   "apmLockHash": null,
@@ -522,23 +552,25 @@ bytes and the digest exactly.
 }
 ```
 
-**Canonical bytes (UTF-8, 411 bytes, exactly).** Note: `createdAt` and
+**Canonical bytes (UTF-8, 382 bytes, exactly).** Note: `createdAt` and
 `codePin` from the input above are absent here — they are stripped per
 §3.1.
 
 ```
-{"apmLockHash":null,"branch":"main","formatVersion":"0.2","kind":"manual","message":"+ postgres MCP","modules":[{"enabled":true,"name":"senior-eng","source":{"kind":"local","path":".claude/agents/senior-eng.md"},"type":"chatmode"},{"enabled":true,"name":"postgres","source":{"kind":"local","path":".claude/settings.json"},"type":"mcp","version":"v0.9"}],"parentIds":["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]}
+{"apmLockHash":null,"branch":"main","formatVersion":"0.3","kind":"auto","modules":[{"enabled":true,"name":"senior-eng","source":{"kind":"local","path":".claude/agents/senior-eng.md"},"type":"chatmode"},{"enabled":true,"name":"postgres","source":{"kind":"local","path":".claude/settings.json"},"type":"mcp","version":"v0.9"}],"parentIds":["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]}
 ```
 
-**Full sha256:** `cc645898beca440be69ed860eca4a2b24e25f29c4369f75c48f00d69d03de89d`
+**Full sha256:** `da5289e572c0fe42e6dcda250a6d392543302965325c56a31f9fce9c4d740412`
 
-**`id` (first 40 chars):** `cc645898beca440be69ed860eca4a2b24e25f29c`
+**`id` (first 40 chars):** `da5289e572c0fe42e6dcda250a6d392543302965`
 
 The fixture filename `canonical-501.bin` is historical (the v0.1.x
-fixture was 501 bytes); the v0.2.0 fixture under that filename is 411
-bytes after the §3.1 strip. See [spec/test-vectors/README.md](test-vectors/README.md)
-for the rationale and for the preserved v0.1.1 fixture used by
-migration tests.
+fixture was 501 bytes); the v0.3.0 fixture under that filename is 382
+bytes after the §3.1 strip and the v0.3 removal of the `message` field.
+See [spec/test-vectors/README.md](test-vectors/README.md) for the
+preserved v0.1.1 and v0.2.0 fixtures (`canonical-501-v0_1_1.bin` and
+`canonical-501-v0_2_0.bin`) kept as breadcrumbs of the canonical-bytes
+evolution.
 
 The reference generator in [scripts/build_examples.py](../scripts/build_examples.py)
 emits this vector at the end of its run. Implementations under test SHOULD
@@ -553,8 +585,8 @@ include this vector in their unit tests.
 | Length | Meaning |
 |---|---|
 | 0 | Init snapshot. `kind` MUST be `"init"`. |
-| 1 | Normal `manual` / `tag` snapshot. The single parent is the previous tip of the snapshot's branch. |
-| 2 | Merge. **Reserved**; not produced in v0.2. **Readers MUST tolerate.** A reader-compat fixture lives at [`examples/compat-fixtures/`](examples/compat-fixtures/) — load that example and confirm the merge node renders correctly to verify conformance. |
+| 1 | Normal `auto` / `tag` snapshot. The single parent is the previous tip of the snapshot's branch. |
+| 2 | Merge. **Reserved**; not produced in v0.3. **Readers MUST tolerate.** A reader-compat fixture lives at [`examples/compat-fixtures/`](examples/compat-fixtures/) — load that example and confirm the merge node renders correctly to verify conformance. |
 
 Branch tips advance on new snapshots; they do **not** advance on
 attribution events. A session that fires the hook 30 times against an
@@ -580,10 +612,11 @@ A branch ref is a file `refs/heads/<branch>` whose contents are exactly:
 
 (40 lowercase hex characters, then a single LF, no trailing whitespace.)
 
-Tag refs follow the same format under `refs/tags/<name>`. v0.2 supports only
-**lightweight refs** — no annotated tags, no reflog, no notes. The tag's
-`message` and `version` live on the tagged snapshot itself. Annotated tags
-and a reflog are v0.3 candidates (§9.4).
+Tag refs follow the same format under `refs/tags/<name>`. v0.3 supports only
+**lightweight refs** — no annotated tags, no reflog. The tag's `version`
+lives on the tagged snapshot itself; tag-level free-form text is captured
+as a `note` attribution event (§2.7) attached to the tagged snapshot, not
+on the snapshot blob. Annotated tags and a reflog are v0.4 candidates (§9.4).
 
 A branch's tip MAY be any snapshot in the DAG, not necessarily a leaf. Tools
 rendering the lineage MUST handle this (a branch may be "behind" a visible
@@ -609,7 +642,7 @@ the subset.)
   ```
 
 A reader determines which by checking whether the file's first non-whitespace
-token is `ref:`. Symbolic refs are restricted to `HEAD` only in v0.2; refs
+token is `ref:`. Symbolic refs are restricted to `HEAD` only in v0.3; refs
 under `refs/` MUST be direct.
 
 ### 4.4 The empty repository
@@ -656,47 +689,55 @@ After step 2, the repository is no longer empty.
 ### 4.5 Worked DAG (from `examples/team-shared/`)
 
 ```
-init      v0.3 (main)        56c54240b524f29b542551e7e20b42762dc215bf
-  └── auto                   b01045525b6701fd2f08965be0fd21b67f1ed8f0
-       └── tag v0.4 (main)   e6e76866ce636119129509a831acab5a2f70b2b5  ← refs/heads/main
-            └── fork (exp)   d042d388476facc44f8f10acffc9fe006286e9ec
-                 └── auto    07b0886ea7978ab50f0fc59fecb514c685cb310b  ← refs/heads/experimental
+init      v0.3 (main)        <id1>
+  └── auto                   <id2>
+       └── tag v0.4 (main)   <id3>  ← refs/heads/main
+            └── auto (exp)   <id4>
+                 └── auto    <id5>  ← refs/heads/experimental
 ```
 
 `refs/tags/v0.4` points at the same snapshot as the branch tip — that is the
-defining relationship of a `tag` snapshot.
+defining relationship of a `tag` snapshot. The fork onto `experimental` is a
+plain `auto`-kind snapshot whose new branch ref is what makes it a fork; see
+§2.2 on why `kind` does not encode "fork."
 
-### 4.6 Session attribution and the resume gap
+### 4.6 Session attribution and the SessionStart firing on resume
 
-In v0.1.x, the SessionStart hook was the only writer, so a session's
+In v0.1.x the SessionStart hook was the only writer, so a session's
 "snapshot" was implicit: the snapshot whose `sessionId` field matched.
-Resumed sessions (`claude --continue`, `claude --resume`) did not fire
-SessionStart, leaving any composition drift since the original session
-unrecorded — the **resume gap**.
+The early v0.1.x soak appeared to show a **resume gap** — resumed
+sessions producing no observable artifact — but later instrumentation
+revealed the host (Claude Code) DOES fire `SessionStart` on resume,
+with `source: "resume"`. The audit recipe in v0.1 was undercounting
+because it matched a JSONL attachment shape that fires only on fresh
+SessionStart events. The data model gap was real; the firing gap was a
+measurement bug.
 
-In v0.2.0, attribution events (§2.7) plus dual-event capture
+v0.2.0 (attribution events §2.7) and dual-event capture
 ([hooks.md §1.1](hooks.md#11-channel-a--stdin-json-primary-claude-code-native))
-close this gap:
+close the data-model gap; v0.3 reaffirms what the host actually does:
 
-- `SessionStart` fires for fresh sessions only and records a
-  `session_start` attribution event.
-- `UserPromptSubmit` fires on every user prompt regardless of whether
-  the session is fresh or resumed, and records a `user_prompt`
-  attribution. The first `user_prompt` of a resumed session captures
-  whatever drift accumulated while the session was idle.
+- `SessionStart` fires on every host-level session-start event,
+  including `startup`, `resume`, `clear`, `compact`. Each records a
+  `session_start` attribution event with the corresponding `source`.
+- `UserPromptSubmit` fires on every user prompt, fresh or resumed.
 
-Implementations and tools rendering session timelines:
+A session may therefore produce **multiple `session_start` attribution
+events** with different `source` values over its lifetime. Tools
+rendering session timelines:
 
-- MUST handle the absence of a `session_start` attribution event
-  gracefully (a resumed session has none).
-- MUST NOT assume a session's first attribution is `session_start`.
-- SHOULD render a resumed-session timeline starting from its first
-  `user_prompt` event.
+- MUST handle multiple `session_start` rows per session_id gracefully,
+  ordered by `observed_at`.
+- MUST NOT assume a session's first attribution is `session_start`
+  (host-level filtering or hook installation timing can still leave
+  some sessions starting from a `user_prompt`).
+- SHOULD render a session's timeline starting from whichever of its
+  attributions has the earliest `observed_at`, regardless of kind.
 
 A session's earliest attribution timestamp answers "when did we first
 observe this session," not "when did the session begin in the host
-runtime." The two concepts coincide for fresh sessions and diverge for
-resumed sessions.
+runtime." Those usually coincide; they may diverge if the hook was
+installed mid-session.
 
 ## 5. The SQLite index (`lineage.sqlite`)
 
@@ -708,15 +749,15 @@ when initializing or migrating. Paraphrasing the schema in code is non-conformin
 
 | Table | Purpose |
 |---|---|
-| `_schema` | Single row: schema version (currently `2`). |
+| `_schema` | Single row: schema version (currently `4`). |
 | `_meta` | Writer-stamped metadata (`format_version`, `created_by`, …). Non-normative. |
-| `snapshots` | One row per snapshot blob. `id` is the primary key. **No `session_id` column in v0.2.0** (was present in v0.1.x; dropped by `002_v0_2_decoupling.sql`). |
+| `snapshots` | One row per snapshot blob. `id` is the primary key. **No `session_id` column** (dropped in v0.2.0); **no `message` column** (dropped in v0.3.0 by `004_v0_3_notes.sql`). |
 | `snapshot_parents` | Edges `(child_id, parent_id, parent_index)`. |
 | `snapshot_modules` | One row per `(snapshot_id, position, module)`. |
-| `attributions` | **New in v0.2.0.** One row per `(sessionId, snapshotId, observedAt, eventKind)` event. See §5.4. |
+| `attributions` | One row per `(sessionId, snapshotId, observedAt, eventKind)` event. Carries optional `note_text` (v0.3.0). See §5.4. |
 | `sessions` | One row per recorded session (writer-defined `id`). |
 | `session_usage` | Per-session per-module observed-use counts. |
-| `tool_calls` | Optional fine-grained call log (writers MAY skip in v0.2). |
+| `tool_calls` | Optional fine-grained call log (writers MAY skip in v0.3). |
 
 ### 5.2 Reindex contract
 
@@ -727,7 +768,7 @@ The operation `harness reindex` MUST:
 3. Walk every file under `snapshots/`, parse the JSON, and insert
    corresponding rows into `snapshots`, `snapshot_parents`, and `snapshot_modules`.
 4. Insert sessions and usage rows when transcripts or other observed data are
-   available. Writers MAY skip this in v0.2; readers MUST tolerate empty
+   available. Writers MAY skip this in v0.3; readers MUST tolerate empty
    sessions/usage tables.
 5. Stamp `_meta` rows with `format_version`, `created_by`, `created_at`,
    and (for re-runs) `reindexed_at`.
@@ -764,38 +805,51 @@ trajectory queries. Conforming implementations MUST honor:
   operation. Migration tooling MAY rewrite them; no other path SHOULD.
 - **Composite primary key** = `(session_id, observed_at, event_kind)`.
   This permits multiple events at the same instant disambiguated by
-  kind (e.g. a hook fire that coincides with a `manual_snap`).
+  kind (e.g. a hook fire that coincides with a `note`).
 - **`event_kind` enum.** The CHECK constraint enumerates `'session_start'`,
-  `'user_prompt'`, `'manual_snap'`, `'migrated'`. Forward-compat per
-  §9.2 applies to unknown values: readers preserve them, but adding a
-  new kind requires a spec amendment.
+  `'user_prompt'`, `'manual_capture'`, `'note'`, `'migrated'`.
+  Forward-compat per §9.2 applies to unknown values: readers preserve
+  them, but adding a new kind requires a spec amendment.
 - **`source` column.** Free-form text or null. Conventionally one of
   `'startup'` / `'resume'` / `'clear'` / `'compact'` for `session_start`
   events; null otherwise. Reader tools SHOULD treat unrecognized
   `source` strings as opaque.
+- **`note_text` column.** Non-null iff `event_kind = 'note'`. The SQL
+  CHECK constraint enforces this exactly: `(event_kind = 'note' AND
+  note_text IS NOT NULL) OR (event_kind != 'note' AND note_text IS
+  NULL)`. Writers MUST also enforce the invariant in code so a malformed
+  event fails before reaching SQL. The text is verbatim user input;
+  multi-line MAY appear; readers MUST handle it.
 - **Foreign key** `snapshot_id REFERENCES snapshots(id)` — an
   attribution always points at a real snapshot. Migration tooling that
   rewrites snapshot ids MUST update attribution rows in the same
   transaction.
 
-The two load-bearing queries:
+The three load-bearing queries:
 
 ```sql
--- Trajectory: ordered events for one session
-SELECT snapshot_id, observed_at, event_kind, source
+-- Trajectory (Q1): ordered events for one session, with notes inline
+SELECT snapshot_id, observed_at, event_kind, source, note_text
   FROM attributions
  WHERE session_id = ?
  ORDER BY observed_at;
 
--- Inverse: which sessions observed this snapshot
+-- Cross-session notes (Q2): every note ever attached to a snapshot
+SELECT session_id, observed_at, note_text
+  FROM attributions
+ WHERE event_kind = 'note' AND snapshot_id = ?
+ ORDER BY observed_at;
+
+-- Inverse session lookup: which sessions observed this snapshot
 SELECT session_id, MIN(observed_at) AS first_seen, MAX(observed_at) AS last_seen
   FROM attributions
  WHERE snapshot_id = ?
  GROUP BY session_id;
 ```
 
-Both are O(log n) given the indexes in `001_init.sql` /
-`002_v0_2_decoupling.sql`.
+All three are O(log n) given the indexes in `001_init.sql` /
+`002_v0_2_decoupling.sql` (Q1 covered by `idx_attributions_session`;
+Q2 and the inverse covered by `idx_attributions_snapshot`).
 
 ## 6. APM interoperability (summary)
 
@@ -811,9 +865,9 @@ requirements load-bearing for this document:
 - The lockfile bytes MUST be hashed and stored at the top level of the
   snapshot blob as `apmLockHash` (§2.3).
 - `kind: "apm"` modules are reproducible via APM tooling, not by extracting
-  files from the snapshot. `kind: "local"` modules in v0.2 record only the
+  files from the snapshot. `kind: "local"` modules in v0.3 record only the
   path; reproduction is best-effort. (Storing local-source content is a
-  v0.3 candidate — §9.4.)
+  v0.4 candidate — §9.4.)
 
 ## 7. The `config` file
 
@@ -867,29 +921,33 @@ A `.harness/config` MAY omit any section; defaults defined in
 
 The hook contract is specified in **[hooks.md](hooks.md)**. Load-bearing
 for this document: the hook fires on **two** events — `SessionStart`
-(fresh sessions) and `UserPromptSubmit` (every user prompt) — and on
-each fire either writes a new `manual`-kind snapshot blob (when
-composition changed) or appends an attribution event to an existing
-snapshot (when composition is unchanged). Both paths are idempotent on
-the composite key `(session_id, observed_at, event_kind)` and atomically
-update `lineage.sqlite`.
+(every host-level session-start, including resume/clear/compact) and
+`UserPromptSubmit` (every user prompt) — and on each fire either writes
+a new `auto`-kind snapshot blob (when composition changed) or appends
+an attribution event to an existing snapshot (when composition is
+unchanged). Both paths are idempotent on the composite key `(session_id,
+observed_at, event_kind)` and atomically update `lineage.sqlite`.
 
 ## 9. Compatibility & versioning
 
 ### 9.1 Spec versioning
 
-This document is `0.2.0`. Snapshot blobs MAY include `formatVersion`. If
-absent, treat as `"0.2"`.
+This document is `0.3.0`. Snapshot blobs MAY include `formatVersion`. If
+absent, treat as `"0.3"`.
 
 | Reader sees | Reader behavior |
 |---|---|
 | Same major (0.x), same or older minor | MUST accept. |
 | Same major (0.x), newer minor | SHOULD accept. MAY warn about unknown fields. |
-| Different major (≥1.0 vs 0.x, vs 0.2 etc.) | MUST refuse unless the reader implements that major. |
+| Different major (≥1.0 vs 0.x, vs 0.3 etc.) | MUST refuse unless the reader implements that major. |
 
-The 0.1 → 0.2 transition is a major bump. v0.1.x readers MUST refuse
-v0.2.x blobs (the `kind` enum is incompatible: v0.1.x rejects `manual`,
-v0.2.x rejects `auto`/`edit`/`fork`). Migration is described in §9.5.
+The 0.1 → 0.2 transition was a major bump (`sessionId` removed; `kind`
+enum reshaped). The 0.2 → 0.3 transition is also a major bump:
+`message` is removed from the snapshot blob entirely (annotations are
+now first-class attribution events; see §2.7) and the `kind` enum
+renames `manual` to `auto`. v0.2.x readers MUST refuse v0.3.x blobs and
+vice versa. Migration from v0.1.x → v0.2.0 is described in §9.5; there
+is **no automated migration** from v0.2.x → v0.3.0 — see §9.6.
 
 ### 9.2 Forward-compat: unknown fields and variants
 
@@ -909,16 +967,16 @@ v0.2.x rejects `auto`/`edit`/`fork`). Migration is described in §9.5.
   between an existing `lineage.sqlite` and the implementation's known
   version trigger reindex (drop and rebuild from `snapshots/`).
 
-### 9.3 What constitutes a minor bump within the v0.2.x family
+### 9.3 What constitutes a minor bump within the v0.3.x family
 
 The minor-version digit moves only for **additive, reader-compatible**
-changes. A v0.2.0 reader, following the §9.2 unknown-field-preservation
-rule, MUST be able to round-trip and render any v0.2.x blob without
+changes. A v0.3.0 reader, following the §9.2 unknown-field-preservation
+rule, MUST be able to round-trip and render any v0.3.x blob without
 data loss. Concretely:
 
-**Counts as a minor bump (v0.2.0 → v0.2.x):**
+**Counts as a minor bump (v0.3.0 → v0.3.x):**
 
-- Adding a new **optional top-level field** to `Snapshot`. v0.2.0 readers
+- Adding a new **optional top-level field** to `Snapshot`. v0.3.0 readers
   preserve it as an unknown field per §9.2.
 - Adding a new **optional `Module` field**. Same rule.
 - Tightening an existing pattern or CHECK constraint that was previously
@@ -927,31 +985,32 @@ data loss. Concretely:
 **Does NOT count as a minor bump (requires a major bump or `x-` prefix):**
 
 - Adding a new value to an existing closed enum (`kind`, `source.kind`,
-  attribution `eventKind`). v0.2.0 readers MUST tolerate unknown
+  attribution `eventKind`). v0.3.0 readers MUST tolerate unknown
   `source.kind` per §9.2 (preserve verbatim, render opaque), so a writer
   experimenting with a new kind SHOULD use the `x-` prefix until the
   spec adopts it normatively. A normative addition (without `x-`) is a
-  major bump because it changes what writers MUST emit; a v0.2.0 writer
+  major bump because it changes what writers MUST emit; a v0.3.0 writer
   would never emit the new kind.
-- Adding a new **required** field (would break v0.2.0 reader validation).
+- Adding a new **required** field (would break v0.3.0 reader validation).
 - Removing a field, renaming a field, changing a field's type.
 - Changing the canonical-bytes derivation rule (§3.1) or the module
   ordering rule (§2.5/hooks.md §2.2).
 
-**Worked example — the v0.1 → v0.2.0 transition.** Removing `sessionId`
-from the snapshot blob, removing `auto`/`edit`/`fork` from the `kind`
-enum, and adding the `manual` kind are all major-bump shapes. They were
-landed together in v0.2.0 because the data-model decoupling (§2.7)
-required all three at once; partial application would not have been
-coherent.
+**Worked example — the v0.2 → v0.3.0 transition.** Removing `message`
+from the snapshot blob and renaming `manual` → `auto` in the `kind`
+enum are both major-bump shapes. They were landed together in v0.3.0
+because the data-model reshape (annotations as first-class events;
+snapshot identity as composition-only) required both at once;
+keeping `manual` while removing `message` would have left the kind
+name suggesting a distinction the data no longer carries.
 
 **Process check.** Any normative addition (even an "additive optional
-field") should pair with: a §9.4 entry in the v0.3 list, a paragraph in
+field") should pair with: a §9.4 entry in the v0.4 list, a paragraph in
 the relevant section, and a `compat-<topic>/` example fixture exercising
 the present-and-populated case. The `harness-spec-amend` skill in
 `.claude/skills/` codifies the workflow.
 
-### 9.4 What v0.3 is expected to add
+### 9.4 What v0.4 is expected to add
 
 Non-normative; recorded for orientation only.
 
@@ -960,20 +1019,23 @@ Non-normative; recorded for orientation only.
 - Storing local-source module file content inside the snapshot blob
   (or as side-blobs) so `kind: "local"` reproduction is byte-exact.
 - Annotated tags and a reflog.
-- Tag annotations in `harness log` output.
+- The `harness reproduce` / `harness checkout --apply` reproducer that
+  materializes a snapshot's modules into the working tree (long-deferred
+  prompt D from the v0.1 plan).
 - Multi-machine sync semantics (push/pull, conflict resolution beyond
   ref fast-forward).
 - User-level capture (`~/.claude/`) gated on the team-sync semantics
   above.
+- `harness log --since <ref>` filter.
 - Float canonicalization tightening, if real-world snapshots demand it.
 
-These items are explicitly out of scope for v0.2. Writers SHOULD NOT
+These items are explicitly out of scope for v0.3. Writers SHOULD NOT
 depend on them; readers MUST NOT assume they exist.
 
-### 9.5 Migration from v0.1.x → v0.2.0
+### 9.5 Migration from v0.1.x → v0.2.0 (historical)
 
-`harness migrate` is the supported migration path. It is idempotent and
-operates in-place on a `.harness/` directory.
+`harness migrate` is the supported migration path from v0.1.x. It is
+idempotent and operates in-place on a `.harness/` directory.
 
 The migration:
 
@@ -1003,9 +1065,38 @@ The migration:
    `event_kind = 'migrated'`, `observed_at = old.created_at`,
    `source = NULL`.
 
-Lossiness: any mid-session composition changes that v0.1.x missed (the
-resume gap before v0.2.0 closed it) are not recoverable. The migration
-preserves what v0.1.x captured and no more.
+Lossiness: any mid-session composition changes v0.1.x missed (the
+firing-time measurement bug discussed in §4.6 left some sessions
+under-recorded) are not recoverable. The migration preserves what
+v0.1.x captured and no more.
 
 The migration runs only forward. Reverting from v0.2.x to v0.1.x is not
 supported; restore from a backup if needed.
+
+The `migrate` command produces v0.2.0 data. It does NOT produce v0.3.0
+data — see §9.6.
+
+### 9.6 v0.2.x → v0.3.0: no automated migration
+
+There is no `harness migrate` path from v0.2.x to v0.3.0. The v0.3.0
+data model treats user annotations as first-class attribution events
+(§2.7) rather than a `message` field on the snapshot blob; mechanically
+mapping a v0.2.x `message` to a v0.3.0 `note` event would require
+synthesizing a `(sessionId, observedAt)` pair that the original capture
+did not record, and the `created_at` timestamp on the snapshot is the
+*composition-change* time, not the annotation time. The two concepts
+coincided in v0.2.x because messages lived on the snapshot; under the
+v0.3 separation that conflation no longer holds.
+
+The supported path forward for v0.2.x users:
+
+1. Take a backup of the existing `.harness/` directory.
+2. Delete it.
+3. Run `harness init` against the project; v0.3.0 capture begins from
+   that point.
+
+v0.2.x snapshots in the backup remain readable by v0.2.x tools. v0.3.0
+tools refuse them per §9.1. There is no plan to add a v0.2 → v0.3
+migrator: the cost of a hand-built migration tool exceeds the value of
+re-importing data that was already captured in service of feedback
+loops the v0.3 design supersedes.

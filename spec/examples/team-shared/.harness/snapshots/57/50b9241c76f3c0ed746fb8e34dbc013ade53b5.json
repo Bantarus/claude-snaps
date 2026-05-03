@@ -1,0 +1,121 @@
+{
+  "apmLockHash": "sha256:0a057f4f0a9475339e774ece9a656c561826bee320894f3f775c1a805858c880",
+  "author": "alex@example.com",
+  "branch": "experimental",
+  "codePin": "a3f9c1ef2244c3e85d10b0a6b7d52f0911aabbcc",
+  "createdAt": "2026-04-30T14:30:00.000Z",
+  "formatVersion": "0.3",
+  "id": "5750b9241c76f3c0ed746fb8e34dbc013ade53b5",
+  "kind": "auto",
+  "modules": [
+    {
+      "enabled": true,
+      "name": "senior-eng",
+      "source": {
+        "kind": "local",
+        "path": ".claude/agents/senior-eng.md"
+      },
+      "type": "chatmode"
+    },
+    {
+      "enabled": true,
+      "name": "research",
+      "source": {
+        "depth": 1,
+        "kind": "apm",
+        "package": "microsoft/apm-sample-package",
+        "resolvedCommit": "a3f9c1ef2244c3e85d10b0a6b7d52f0911aabbcc"
+      },
+      "type": "skill",
+      "version": "v1.6"
+    },
+    {
+      "enabled": true,
+      "name": "code-review",
+      "source": {
+        "depth": 1,
+        "kind": "apm",
+        "package": "microsoft/apm-sample-package",
+        "resolvedCommit": "a3f9c1ef2244c3e85d10b0a6b7d52f0911aabbcc"
+      },
+      "type": "skill",
+      "version": "v1.6"
+    },
+    {
+      "enabled": true,
+      "name": "summarize",
+      "source": {
+        "depth": 2,
+        "kind": "apm",
+        "package": "microsoft/common-utilities",
+        "resolvedBy": "microsoft/apm-sample-package",
+        "resolvedCommit": "bb22cc33dd44ee55ff66778899aabbccddeeff00"
+      },
+      "type": "skill",
+      "version": "v0.2"
+    },
+    {
+      "enabled": true,
+      "name": "/plan",
+      "source": {
+        "kind": "local",
+        "path": ".claude/commands/plan.md"
+      },
+      "type": "prompt"
+    },
+    {
+      "enabled": true,
+      "name": "format-pre",
+      "source": {
+        "kind": "local",
+        "path": ".claude/settings.json"
+      },
+      "type": "hook"
+    },
+    {
+      "enabled": true,
+      "name": "format-post",
+      "source": {
+        "kind": "local",
+        "path": ".claude/settings.json"
+      },
+      "type": "hook"
+    },
+    {
+      "enabled": true,
+      "name": "terse",
+      "source": {
+        "kind": "local",
+        "path": ".claude/output-styles/terse.md"
+      },
+      "type": "style"
+    },
+    {
+      "enabled": true,
+      "name": "Read",
+      "source": {
+        "kind": "builtin"
+      },
+      "type": "mcp"
+    },
+    {
+      "enabled": true,
+      "name": "Write",
+      "source": {
+        "kind": "builtin"
+      },
+      "type": "mcp"
+    },
+    {
+      "enabled": true,
+      "name": "Bash",
+      "source": {
+        "kind": "builtin"
+      },
+      "type": "mcp"
+    }
+  ],
+  "parentIds": [
+    "b7845e7a63d3e82701523c97c2b5c9c89f9a2958"
+  ]
+}

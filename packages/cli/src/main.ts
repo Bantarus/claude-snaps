@@ -9,7 +9,7 @@ import { cmdReindex } from './commands/reindex.js';
 import { cmdInstallHook } from './commands/install_hook.js';
 import { cmdSnap } from './commands/snap.js';
 import { cmdSessions } from './commands/sessions.js';
-import { cmdMigrate } from './commands/migrate.js';
+import { cmdNotes } from './commands/notes.js';
 
 export interface ParsedArgs {
   command: string | null;
@@ -49,18 +49,11 @@ export function parseArgs(argv: string[]): ParsedArgs {
       continue;
     }
     if (a.startsWith('-')) {
-      // Single short flag with a value: `-m message`. The only short
-      // flag with a value in v0.2 is `-m` (snap message). Add others
-      // here as needed; default behavior throws so typos surface.
-      if (a === '-m') {
-        const next = argv[i + 1];
-        if (next === undefined) {
-          throw new Error(`-m requires a value`);
-        }
-        flags['m'] = next;
-        i++;
-        continue;
-      }
+      // Single short flags with values are added on demand. Default
+      // behavior throws so typos surface rather than being silently
+      // dropped. (v0.3 has no short-flag-with-value commands; -m on
+      // `harness snap` was retired in favor of the required positional
+      // note argument.)
       throw new Error(`unknown short flag: ${a}`);
     }
     if (command === null) command = a;
@@ -74,14 +67,19 @@ const HELP = `Usage: harness <command> [args...] [--flags]
 Commands:
   init [--branch=<name>]                  Initialize a new .harness/ in cwd.
   log [--branch=<name>] [--limit=N]
-      [--with-sessions]                   List snapshots, newest first.
+      [--with-sessions]                   List snapshots, newest first; per-row
+                                            diff summary computed at read time.
   diff <a> <b>                            Diff two snapshots' modules.
-  snap [-m <message>]                     Manual capture of current state.
-  sessions [<session-id>]                 List sessions, or render a trajectory.
+  snap "<note>"                           Capture current state and attach a note.
+                                            Note is required; there is no anonymous
+                                            CLI capture.
+  sessions [<session-id>]                 List sessions, or render a trajectory
+                                            (notes inline, marked with @).
+  notes <snapshot-ref>                    List every note ever attached to a
+                                            snapshot, across sessions.
   tag <name> [<id>] [--force]             Tag a snapshot (defaults to HEAD).
   branch <name> [<id>] [--force]          Create a branch at <id> or HEAD.
   checkout <ref>                          Move HEAD to <ref>.
-  migrate                                 v0.1.x → v0.2.0 in-place migration.
   reindex                                 Rebuild lineage.sqlite from snapshots/.
   install-hook [--force]                  Wire harness-hook into .claude/settings.json
                                             (SessionStart + UserPromptSubmit).
@@ -99,10 +97,10 @@ export async function dispatch(parsed: ParsedArgs): Promise<number> {
     case 'diff':         return cmdDiff(parsed);
     case 'snap':         return cmdSnap(parsed);
     case 'sessions':     return cmdSessions(parsed);
+    case 'notes':        return cmdNotes(parsed);
     case 'tag':          return cmdTag(parsed);
     case 'branch':       return cmdBranch(parsed);
     case 'checkout':     return cmdCheckout(parsed);
-    case 'migrate':      return cmdMigrate(parsed);
     case 'reindex':      return cmdReindex(parsed);
     case 'install-hook': return cmdInstallHook(parsed);
     case null:

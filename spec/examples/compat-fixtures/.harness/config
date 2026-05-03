@@ -2,7 +2,7 @@
 
 [core]
 default_branch = "main"
-format_version = "0.2"
+format_version = "0.3"
 
 [capture]
 auto_snapshot_on_session = true

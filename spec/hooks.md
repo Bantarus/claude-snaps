@@ -1,26 +1,31 @@
 # `.harness/` — Hook contract (SessionStart, UserPromptSubmit)
 
-> **Status:** Working Draft v0.2.0.
+> **Status:** Working Draft v0.3.0.
 > **Conformance terminology:** [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119) (MUST / SHOULD / MAY).
 > **Companion to:** [format.md](format.md), [apm-integration.md](apm-integration.md).
 
 This document specifies the contract between an agent runtime that fires
 hook events and a hook executable that records the harness composition
-into `.harness/`. In v0.2.0 the hook MUST handle two events:
+into `.harness/`. In v0.3.0 the hook MUST handle two events:
 
-- **`SessionStart`** — fired once per fresh session. Records a
-  `session_start` attribution event ([format.md §2.7](format.md#27-attribution-events)).
+- **`SessionStart`** — fired on every host-level session-start event
+  (startup, resume, clear, compact). Records a `session_start`
+  attribution event ([format.md §2.7](format.md#27-attribution-events))
+  with the host's `source` value carried through.
 - **`UserPromptSubmit`** — fired on every user prompt within a session,
   including the first prompt of a resumed session. Records a
   `user_prompt` attribution event.
 
 On each fire, the hook either appends an attribution event to an
 existing snapshot (when composition is unchanged since the previous
-fire) or writes a new `manual`-kind snapshot blob plus an attribution
+fire) or writes a new `auto`-kind snapshot blob plus an attribution
 event (when composition changed). The hook is the most common entry
 point for populating `.harness/`; the rest of this document is written
 from its perspective. Other writers (CLI commands, IDE integrations)
-follow the same data contract but may diverge on argument forms.
+follow the same data contract but may diverge on argument forms — for
+example, `harness snap "<note>"` follows the same change-detection path
+and additionally appends a `note` attribution event carrying the user's
+text (see [format.md §2.7](format.md#27-attribution-events)).
 
 ## 1. Invocation interface
 
@@ -67,7 +72,7 @@ explain about behavioral drift between snapshots, and they cannot be
 backfilled because snapshots are immutable. When the hot-path
 optimization (§2.4) skips writing a new snapshot, `model` and
 `permission_mode` are not re-applied to the existing snapshot. Other
-unknown fields are observed-and-ignored in v0.2.
+unknown fields are observed-and-ignored in v0.3.
 
 ### 1.2 Channel B — CLI flags (secondary, testing)
 
@@ -128,7 +133,7 @@ composition-change detection (see
   otherwise mutate the snapshots table. This is the **no-change path**.
 - **Composition changed** (or no current `HEAD` snapshot, i.e. empty
   repo first fire): the hook MUST write a new snapshot blob whose
-  `kind` is `"manual"` (or `"init"` if `HEAD` resolves to no commit yet,
+  `kind` is `"auto"` (or `"init"` if `HEAD` resolves to no commit yet,
   i.e. the very first snapshot of an empty repo per
   [format.md §4.4](format.md#44-the-empty-repository)), advance the
   current branch ref to the new id, and append exactly one row to
@@ -173,10 +178,10 @@ For each captured module, the hook MUST:
 file bytes.
 
 The hook MUST NOT walk user-level `~/.claude/` or any non-project path —
-v0.2 capture is project-only by design. See
-[format.md §1.1](format.md#11-capture-scope-project-level-only-v02)
+v0.3 capture is project-only by design. See
+[format.md §1.1](format.md#11-capture-scope-project-level-only-v03)
 for the rationale (portability across machines outweighs fidelity to a
-single developer's runtime). User-level capture is a v0.3 candidate.
+single developer's runtime). User-level capture is a v0.4 candidate.
 
 ### 2.2 Module ordering
 
@@ -194,11 +199,11 @@ Implementations that diverge from this ordering will produce different
 ids for identical compositions and will not interoperate for content
 deduplication.
 
-### 2.3 What the hook does NOT capture in v0.2
+### 2.3 What the hook does NOT capture in v0.3
 
 - File contents of local-source modules. The blob records paths only;
   reproducing local sources from snapshot alone is not supported. See
-  [format.md §9.4](format.md#94-what-v03-is-expected-to-add).
+  [format.md §9.4](format.md#94-what-v04-is-expected-to-add).
 - Permissions / settings beyond what's needed to identify a module.
   `enabled` is recorded; the full ACL is not.
 - Process-level state (env vars, working directory beyond `--cwd`).
@@ -348,7 +353,7 @@ goes to stderr.
 
 The blob files under [`examples/solo-no-apm/.harness/snapshots/`](examples/solo-no-apm/.harness/snapshots/)
 show the output of an idealized hook on a project with no APM lockfile
-— the `manual`-kind blobs that represent the composition observed on
+— the `auto`-kind blobs that represent the composition observed on
 each fire that detected a change.
 
 [`examples/team-shared/.harness/snapshots/`](examples/team-shared/.harness/snapshots/)
@@ -357,7 +362,7 @@ shows the output on an APM-enabled project. Modules carry
 `/plan` prompt, and `builtin` for Read/Write/Bash. `apmLockHash` is set
 to the sha256 of the lockfile bytes at snapshot time.
 
-Note: snapshot blobs do **not** carry session attribution in v0.2.0.
-The `(session_id, snapshot_id, observed_at, event_kind)` tuples live
-in `lineage.sqlite`'s `attributions` table; see
-[format.md §2.7](format.md#27-attribution-events).
+Note: snapshot blobs do **not** carry session attribution or free-form
+text in v0.3.0. Both live in `lineage.sqlite`'s `attributions` table —
+the `(session_id, snapshot_id, observed_at, event_kind, note_text)`
+tuples; see [format.md §2.7](format.md#27-attribution-events).

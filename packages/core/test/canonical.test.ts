@@ -9,14 +9,13 @@ import type { Snapshot } from '../src/types.js';
 const here = dirname(fileURLToPath(import.meta.url));
 const SPEC_DIR = resolve(here, '../../../spec');
 
-// The literal test vector from spec/format.md §3.2 — copied verbatim
+// The literal test vector from spec/format.md §3.3 — copied verbatim
 // (with `id` omitted, as the spec specifies).
 const TV_INPUT: Omit<Snapshot, 'id'> = {
-  formatVersion: '0.2',
+  formatVersion: '0.3',
   parentIds: ['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'],
   branch: 'main',
-  kind: 'manual',
-  message: '+ postgres MCP',
+  kind: 'auto',
   codePin: 'b22e80aa12cc34dd56ee78ff90aabbccddeeff00',
   createdAt: '2026-04-29T18:20:00.000Z',
   apmLockHash: null,
@@ -37,13 +36,15 @@ const TV_INPUT: Omit<Snapshot, 'id'> = {
   ],
 };
 
-// v0.2.0 fixture digest. Filename `canonical-501.bin` is historical
-// (the v0.1.1 fixture was 501 bytes); the v0.2.0 fixture is 411 bytes
-// — sessionId was dropped and §3.1 strips createdAt/codePin/model/
-// permissionMode from canonical bytes.
-const FIXTURE_DIGEST = 'cc645898beca440be69ed860eca4a2b24e25f29c4369f75c48f00d69d03de89d';
-const FIXTURE_ID = 'cc645898beca440be69ed860eca4a2b24e25f29c';
-const FIXTURE_BYTE_LENGTH = 411;
+// v0.3.0 fixture digest. Filename `canonical-501.bin` is historical
+// (the v0.1.1 fixture was 501 bytes); the v0.3.0 fixture is 382 bytes
+// — message and sessionId both dropped over v0.1 → v0.2 → v0.3, and
+// §3.1 strips createdAt/codePin/model/permissionMode from canonical
+// bytes. Historical breadcrumbs at canonical-501-v0_1_1.bin and
+// canonical-501-v0_2_0.bin.
+const FIXTURE_DIGEST = 'da5289e572c0fe42e6dcda250a6d392543302965325c56a31f9fce9c4d740412';
+const FIXTURE_ID = 'da5289e572c0fe42e6dcda250a6d392543302965';
+const FIXTURE_BYTE_LENGTH = 382;
 
 // Fields stripped from canonical bytes per spec/format.md §3.1.
 const EXCLUDED_FIELDS = ['id', 'createdAt', 'codePin', 'model', 'permissionMode'] as const;
@@ -166,7 +167,7 @@ describe('snapshotId: shape', () => {
 
   test('different blobs produce different ids', () => {
     const a = { ...TV_INPUT };
-    const b = { ...TV_INPUT, message: 'different message' };
+    const b: Omit<Snapshot, 'id'> = { ...TV_INPUT, branch: 'experimental' };
     expect(snapshotId(a)).not.toBe(snapshotId(b));
   });
 });

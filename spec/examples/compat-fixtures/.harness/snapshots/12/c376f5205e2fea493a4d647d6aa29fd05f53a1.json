@@ -1,0 +1,48 @@
+{
+  "apmLockHash": null,
+  "branch": "main",
+  "codePin": null,
+  "createdAt": "2026-04-02T00:00:00.000Z",
+  "formatVersion": "0.3",
+  "id": "12c376f5205e2fea493a4d647d6aa29fd05f53a1",
+  "kind": "auto",
+  "modules": [
+    {
+      "enabled": true,
+      "name": "senior-eng",
+      "source": {
+        "kind": "local",
+        "path": ".claude/agents/senior-eng.md"
+      },
+      "type": "chatmode"
+    },
+    {
+      "enabled": true,
+      "name": "Read",
+      "source": {
+        "kind": "builtin"
+      },
+      "type": "mcp"
+    },
+    {
+      "enabled": true,
+      "name": "Bash",
+      "source": {
+        "kind": "builtin"
+      },
+      "type": "mcp"
+    },
+    {
+      "enabled": true,
+      "name": "left-only",
+      "source": {
+        "kind": "local",
+        "path": ".claude/skills/left-only/SKILL.md"
+      },
+      "type": "skill"
+    }
+  ],
+  "parentIds": [
+    "f5e6cac2653911ae8338cd58c683b5fbff9abf3c"
+  ]
+}

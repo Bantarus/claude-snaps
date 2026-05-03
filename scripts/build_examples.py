@@ -125,7 +125,7 @@ CONFIG_DEFAULT = """\
 
 [core]
 default_branch = "main"
-format_version = "0.2"
+format_version = "0.3"
 
 [capture]
 auto_snapshot_on_session = true
@@ -179,11 +179,10 @@ def build_solo_no_apm():
         m_builtin("mcp", "Bash"),
     ]
     s_init = {
-        "formatVersion": "0.2",
+        "formatVersion": "0.3",
         "parentIds": [],
         "branch": "main",
         "kind": "init",
-        "message": "init from recipe: research-base",
         "version": "v0.1",
         "codePin": "71fe33aa01bc4d2e3f8970a14b5cdee2330aa901",
         "createdAt": "2026-04-23T09:12:30.000Z",
@@ -194,11 +193,10 @@ def build_solo_no_apm():
     id_init = write_snapshot(h, s_init)
 
     s_manual_edit = {
-        "formatVersion": "0.2",
+        "formatVersion": "0.3",
         "parentIds": [id_init],
         "branch": "main",
-        "kind": "manual",
-        "message": "+ format-post hook",
+        "kind": "auto",
         "codePin": "71fe33aa01bc4d2e3f8970a14b5cdee2330aa901",
         "createdAt": "2026-04-24T17:42:11.500Z",
         "author": "ben@example.com",
@@ -211,11 +209,10 @@ def build_solo_no_apm():
 
     auto_modules = base_modules + [m_local("hook", "format-post", ".claude/settings.json")]
     s_auto1 = {
-        "formatVersion": "0.2",
+        "formatVersion": "0.3",
         "parentIds": [id_manual_edit],
         "branch": "main",
-        "kind": "manual",
-        "message": None,
+        "kind": "auto",
         "codePin": "9c12aa44b30115ee61b2c7a890fdc31002ee30bb",
         "createdAt": "2026-04-25T08:03:45.812Z",
         "author": "ben@example.com",
@@ -225,11 +222,10 @@ def build_solo_no_apm():
     id_auto1 = write_snapshot(h, s_auto1)
 
     s_tag = {
-        "formatVersion": "0.2",
+        "formatVersion": "0.3",
         "parentIds": [id_auto1],
         "branch": "main",
         "kind": "tag",
-        "message": "promote v0.2",
         "version": "v0.2",
         "codePin": "9c12aa44b30115ee61b2c7a890fdc31002ee30bb",
         "createdAt": "2026-04-25T18:00:00.000Z",
@@ -240,11 +236,10 @@ def build_solo_no_apm():
     id_tag = write_snapshot(h, s_tag)
 
     s_auto2 = {
-        "formatVersion": "0.2",
+        "formatVersion": "0.3",
         "parentIds": [id_tag],
         "branch": "main",
-        "kind": "manual",
-        "message": None,
+        "kind": "auto",
         "codePin": "a3f9c1ef2244c3e85d10b0a6b7d52f0911aabbcc",
         "createdAt": "2026-04-30T12:08:24.000Z",
         "author": "ben@example.com",
@@ -332,11 +327,10 @@ def build_solo_with_apm():
         m_builtin("mcp", "Bash"),
     ]
     s_init = {
-        "formatVersion": "0.2",
+        "formatVersion": "0.3",
         "parentIds": [],
         "branch": "main",
         "kind": "init",
-        "message": "init from APM packages",
         "version": "v0.1",
         "codePin": "1100ffeebbccdd44aa5566778899aabbccddeeff",
         "createdAt": "2026-04-26T10:00:00.000Z",
@@ -347,11 +341,10 @@ def build_solo_with_apm():
     id_init = write_snapshot(h, s_init)
 
     s_auto = {
-        "formatVersion": "0.2",
+        "formatVersion": "0.3",
         "parentIds": [id_init],
         "branch": "main",
-        "kind": "manual",
-        "message": None,
+        "kind": "auto",
         "codePin": "1100ffeebbccdd44aa5566778899aabbccddeeff",
         "createdAt": "2026-04-27T11:30:00.000Z",
         "author": "ben@example.com",
@@ -361,11 +354,10 @@ def build_solo_with_apm():
     id_auto = write_snapshot(h, s_auto)
 
     s_tag = {
-        "formatVersion": "0.2",
+        "formatVersion": "0.3",
         "parentIds": [id_auto],
         "branch": "main",
         "kind": "tag",
-        "message": "promote v0.1",
         "version": "v0.1",
         "codePin": "1100ffeebbccdd44aa5566778899aabbccddeeff",
         "createdAt": "2026-04-27T12:00:00.000Z",
@@ -450,11 +442,10 @@ def build_team_shared():
     ]
 
     s_init = {
-        "formatVersion": "0.2",
+        "formatVersion": "0.3",
         "parentIds": [],
         "branch": "main",
         "kind": "init",
-        "message": "init team harness",
         "version": "v0.3",
         "codePin": "9c12aa44b30115ee61b2c7a890fdc31002ee30bb",
         "createdAt": "2026-04-20T09:00:00.000Z",
@@ -465,11 +456,10 @@ def build_team_shared():
     id_init = write_snapshot(h, s_init)
 
     s_auto1 = {
-        "formatVersion": "0.2",
+        "formatVersion": "0.3",
         "parentIds": [id_init],
         "branch": "main",
-        "kind": "manual",
-        "message": None,
+        "kind": "auto",
         "codePin": "a3f9c1ef2244c3e85d10b0a6b7d52f0911aabbcc",
         "createdAt": "2026-04-30T12:04:12.000Z",
         "author": "ben@example.com",
@@ -479,11 +469,10 @@ def build_team_shared():
     id_auto1 = write_snapshot(h, s_auto1)
 
     s_tag = {
-        "formatVersion": "0.2",
+        "formatVersion": "0.3",
         "parentIds": [id_auto1],
         "branch": "main",
         "kind": "tag",
-        "message": "promote v0.4",
         "version": "v0.4",
         "codePin": "a3f9c1ef2244c3e85d10b0a6b7d52f0911aabbcc",
         "createdAt": "2026-04-30T14:00:00.000Z",
@@ -494,14 +483,13 @@ def build_team_shared():
     id_tag = write_snapshot(h, s_tag)
 
     # Branch into experimental from id_tag — demonstrates DAG divergence.
-    # In v0.2.0 there is no `fork` kind; what makes a snapshot a "fork" is
+    # In v0.3.0 there is no `fork` kind; what makes a snapshot a "fork" is
     # the new branch ref pointing at it, not a structural property.
     s_branch = {
-        "formatVersion": "0.2",
+        "formatVersion": "0.3",
         "parentIds": [id_tag],
         "branch": "experimental",
-        "kind": "manual",
-        "message": "branch experimental: try claude-haiku-4-5 chatmode",
+        "kind": "auto",
         "codePin": "a3f9c1ef2244c3e85d10b0a6b7d52f0911aabbcc",
         "createdAt": "2026-04-30T14:30:00.000Z",
         "author": "alex@example.com",
@@ -514,11 +502,10 @@ def build_team_shared():
         m_local("chatmode", "haiku-research", ".claude/agents/haiku-research.md"),
     ]
     s_exp_auto = {
-        "formatVersion": "0.2",
+        "formatVersion": "0.3",
         "parentIds": [id_branch],
         "branch": "experimental",
-        "kind": "manual",
-        "message": None,
+        "kind": "auto",
         "codePin": "a3f9c1ef2244c3e85d10b0a6b7d52f0911aabbcc",
         "createdAt": "2026-04-30T15:18:00.000Z",
         "author": "alex@example.com",
@@ -542,7 +529,7 @@ def build_team_shared():
 COMPAT_README = """\
 # compat-fixtures — reader compatibility test cases
 
-These snapshots are SYNTHETIC. A v0.2 writer never produces them. A v0.2
+These snapshots are SYNTHETIC. A v0.3 writer never produces them. A v0.3
 reader MUST tolerate them per the rules in spec/format.md §4.1 (merge
 parents) and §9.2 (unknown `source.kind` and forward-compat fields).
 
@@ -551,23 +538,22 @@ example and asserting that it surfaces each blob without crashing,
 preserves unknown variants on round-trip, and renders the DAG correctly
 (including the merge node and its diamond-shaped ancestry).
 
-| Snapshot kind/role     | What it exercises |
+| Snapshot kind/role  | What it exercises |
 |---|---|
-| init                   | baseline ancestor for the diamond |
-| manual (left)          | one branch of the diamond |
-| manual (right)         | other branch of the diamond |
-| manual — merge         | `parentIds.length === 2`; readers MUST handle |
-| manual — x-extension   | a module whose `source.kind` is `x-experimental-bundle`; readers MUST preserve verbatim and treat as opaque |
+| init                | baseline ancestor for the diamond |
+| auto (left)         | one branch of the diamond |
+| auto (right)        | other branch of the diamond |
+| auto — merge        | `parentIds.length === 2`; readers MUST handle |
+| auto — x-extension  | a module whose `source.kind` is `x-experimental-bundle`; readers MUST preserve verbatim and treat as opaque |
 
 The `examples/compat-session-ctx/` example is a sibling fixture that exercises
 populated optional `model` and `permissionMode` blob fields — kept separate so
 the diamond DAG above stays free of additional descendants.
 
-The example uses the `manual` kind for the merge node rather than
-introducing a `merge` kind enum value — v0.2 of the spec reserves
-length-2 parents but does not add a kind for it. The `manual` value
-covers any composition-change capture in v0.2 (replacing v0.1's
-`edit`/`auto`/`fork`).
+The example uses the `auto` kind for the merge node rather than
+introducing a `merge` kind enum value — v0.3 of the spec reserves
+length-2 parents but does not add a kind for it. The `auto` value
+covers any composition-change capture in v0.3.
 """
 
 
@@ -586,11 +572,10 @@ def build_compat_fixtures():
     ]
 
     s_init = {
-        "formatVersion": "0.2",
+        "formatVersion": "0.3",
         "parentIds": [],
         "branch": "main",
         "kind": "init",
-        "message": "compat fixture: baseline",
         "codePin": None,
         "createdAt": "2026-04-01T00:00:00.000Z",
         "apmLockHash": None,
@@ -599,11 +584,10 @@ def build_compat_fixtures():
     id_init = write_snapshot(h, s_init)
 
     s_left = {
-        "formatVersion": "0.2",
+        "formatVersion": "0.3",
         "parentIds": [id_init],
         "branch": "main",
-        "kind": "manual",
-        "message": "compat fixture: left edit",
+        "kind": "auto",
         "codePin": None,
         "createdAt": "2026-04-02T00:00:00.000Z",
         "apmLockHash": None,
@@ -614,11 +598,10 @@ def build_compat_fixtures():
     id_left = write_snapshot(h, s_left)
 
     s_right = {
-        "formatVersion": "0.2",
+        "formatVersion": "0.3",
         "parentIds": [id_init],
         "branch": "main",
-        "kind": "manual",
-        "message": "compat fixture: right edit",
+        "kind": "auto",
         "codePin": None,
         "createdAt": "2026-04-02T00:00:00.000Z",
         "apmLockHash": None,
@@ -628,14 +611,13 @@ def build_compat_fixtures():
     }
     id_right = write_snapshot(h, s_right)
 
-    # Merge node — parentIds.length == 2. v0.1 writers don't produce this;
+    # Merge node — parentIds.length == 2. v0.3 writers don't produce this;
     # readers MUST tolerate per format.md §4.1.
     s_merge = {
-        "formatVersion": "0.2",
+        "formatVersion": "0.3",
         "parentIds": [id_left, id_right],
         "branch": "main",
-        "kind": "manual",
-        "message": "compat fixture: merge of left and right",
+        "kind": "auto",
         "codePin": None,
         "createdAt": "2026-04-03T00:00:00.000Z",
         "apmLockHash": None,
@@ -648,11 +630,10 @@ def build_compat_fixtures():
 
     # x-extension source.kind. Readers MUST preserve verbatim per §9.2.
     s_xext = {
-        "formatVersion": "0.2",
+        "formatVersion": "0.3",
         "parentIds": [id_merge],
         "branch": "main",
-        "kind": "manual",
-        "message": "compat fixture: unknown source.kind",
+        "kind": "auto",
         "codePin": None,
         "createdAt": "2026-04-04T00:00:00.000Z",
         "apmLockHash": None,
@@ -687,9 +668,9 @@ def build_compat_fixtures():
 SESSION_CTX_README = """\
 # compat-session-ctx — optional `model` / `permissionMode` round-trip
 
-A v0.2 reader MUST preserve the optional top-level `model` and
+A v0.3 reader MUST preserve the optional top-level `model` and
 `permissionMode` fields when present (format.md §2.1, §9.2). This fixture
-contains a single `manual` snapshot with both fields populated as the
+contains a single `auto` snapshot with both fields populated as the
 hook (SessionStart or UserPromptSubmit) would write them from its stdin
 payload.
 
@@ -699,7 +680,7 @@ payload.
 | `permissionMode` | `default` | `stdin.permission_mode` (hooks.md §1.1) |
 
 Sibling fixtures under `examples/compat-fixtures/` exercise the
-field-absent path. Together these two cover both code paths a v0.2
+field-absent path. Together these two cover both code paths a v0.3
 reader must handle.
 """
 
@@ -719,11 +700,10 @@ def build_compat_session_ctx():
     ]
 
     s_init = {
-        "formatVersion": "0.2",
+        "formatVersion": "0.3",
         "parentIds": [],
         "branch": "main",
         "kind": "init",
-        "message": "session-context fixture: baseline",
         "codePin": None,
         "createdAt": "2026-04-05T00:00:00.000Z",
         "apmLockHash": None,
@@ -731,14 +711,13 @@ def build_compat_session_ctx():
     }
     id_init = write_snapshot(h, s_init)
 
-    # Manual snapshot (hook-driven composition change) with both optional
+    # Auto snapshot (hook-driven composition change) with both optional
     # session-context fields populated by the hook from its stdin payload.
     s_auto = {
-        "formatVersion": "0.2",
+        "formatVersion": "0.3",
         "parentIds": [id_init],
         "branch": "main",
-        "kind": "manual",
-        "message": None,
+        "kind": "auto",
         "codePin": None,
         "createdAt": "2026-04-05T00:01:00.000Z",
         "apmLockHash": None,
@@ -759,11 +738,10 @@ def build_compat_session_ctx():
 # ─────────────────────────────────────────────────────────────────────────────
 
 TEST_VECTOR_INPUT = {
-    "formatVersion": "0.2",
+    "formatVersion": "0.3",
     "parentIds": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
     "branch": "main",
-    "kind": "manual",
-    "message": "+ postgres MCP",
+    "kind": "auto",
     "codePin": "b22e80aa12cc34dd56ee78ff90aabbccddeeff00",
     "createdAt": "2026-04-29T18:20:00.000Z",
     "apmLockHash": None,

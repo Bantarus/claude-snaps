@@ -11,19 +11,21 @@ import type { Attribution, AttributionEventKind, Snapshot, SnapshotKind } from '
 // runtime; we do NOT inline it as a TS string. Inlining would create
 // two sources of truth that drift.
 
-// On open we apply 001, 002, then 003 in order so the runtime schema
-// is always v3: snapshots without session_id, kind CHECK
-// init|manual|tag, attributions table available, session_observation_
-// cache table available for the hook's hot-path. Each migration is
-// idempotent through the version-gate in ensureSchema().
+// On open we apply 001 → 002 → 003 → 004 in order so the runtime
+// schema is always v4: snapshots without session_id and without
+// message, kind CHECK init|auto|tag, attributions table with
+// note_text + invariant + new event_kind enum, session_observation_
+// cache table for the hook's hot-path. Each migration is idempotent
+// through the version-gate in ensureSchema().
 const SCHEMA_FILES: Array<{ from: number; file: string; to: number }> = [
-  { from: 0, file: '001_init.sql',                  to: 1 },
-  { from: 1, file: '002_v0_2_decoupling.sql',       to: 2 },
-  { from: 2, file: '003_session_observation_cache.sql', to: 3 },
+  { from: 0, file: '001_init.sql',                       to: 1 },
+  { from: 1, file: '002_v0_2_decoupling.sql',            to: 2 },
+  { from: 2, file: '003_session_observation_cache.sql',  to: 3 },
+  { from: 3, file: '004_v0_3_notes.sql',                 to: 4 },
 ];
-const CURRENT_SCHEMA_VERSION = 3;
-const HARNESS_FORMAT_VERSION = '0.2';
-const WRITER_NAME = '@harness/core@0.2.0';
+const CURRENT_SCHEMA_VERSION = 4;
+const HARNESS_FORMAT_VERSION = '0.3';
+const WRITER_NAME = '@harness/core@0.3.0';
 
 // node:sqlite emits an ExperimentalWarning on first DatabaseSync() call in
 // Node 22-24. Suppress only that specific warning so we don't pollute
@@ -97,13 +99,13 @@ export class IndexDb {
     this.db
       .prepare(
         `INSERT INTO snapshots
-           (id, branch, kind, message, version, code_pin, apm_lock_hash,
+           (id, branch, kind, version, code_pin, apm_lock_hash,
             author, created_at, format_version,
             model, permission_mode)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
-        snap.id, snap.branch, snap.kind, snap.message, snap.version ?? null,
+        snap.id, snap.branch, snap.kind, snap.version ?? null,
         snap.codePin, snap.apmLockHash,
         snap.author ?? null, snap.createdAt,
         snap.formatVersion ?? HARNESS_FORMAT_VERSION,
@@ -175,49 +177,74 @@ export class IndexDb {
     return rows.map((r) => this.hydrate(r));
   }
 
-  // ── attribution events (v0.2.0; spec/format.md §2.7, §5.4) ────────────
+  // ── attribution events (v0.3; spec/format.md §2.7, §5.4) ──────────────
 
   /**
    * Append an attribution event row. Idempotent: a primary-key
    * collision on (session_id, observed_at, event_kind) is treated as a
    * successful no-op (the event was already recorded, retry is harmless).
    *
+   * Validates the note_text invariant (non-null iff event_kind='note')
+   * in TS before SQL — the SQL CHECK is the backstop, not the
+   * front-line message.
+   *
    * Throws if `snapshotId` doesn't reference an existing snapshot row —
    * the FK enforces this at SQLite level.
    */
   insertAttribution(attr: Attribution): void {
+    const isNote = attr.eventKind === 'note';
+    const hasText = attr.noteText !== null;
+    if (isNote !== hasText) {
+      throw new IntegrityError(
+        `attribution note_text invariant violated: eventKind=${attr.eventKind} noteText=${
+          attr.noteText === null ? 'null' : 'string'
+        } (must be non-null iff eventKind='note')`,
+      );
+    }
     this.db
       .prepare(
         `INSERT OR IGNORE INTO attributions
-           (session_id, snapshot_id, observed_at, event_kind, source)
-         VALUES (?, ?, ?, ?, ?)`,
+           (session_id, snapshot_id, observed_at, event_kind, source, note_text)
+         VALUES (?, ?, ?, ?, ?, ?)`,
       )
       .run(
         attr.sessionId, attr.snapshotId, attr.observedAt,
-        attr.eventKind, attr.source,
+        attr.eventKind, attr.source, attr.noteText,
       );
   }
 
   /**
-   * Trajectory of a session: ordered list of attribution events.
+   * Trajectory of a session: ordered list of attribution events,
+   * including any `note` events inline at their observation timestamps.
    * Returns empty array if the session has no recorded events.
    */
   trajectoryOf(sessionId: string): Attribution[] {
     const rows = this.db
       .prepare(
-        `SELECT session_id, snapshot_id, observed_at, event_kind, source
+        `SELECT session_id, snapshot_id, observed_at, event_kind, source, note_text
            FROM attributions
           WHERE session_id = ?
           ORDER BY observed_at, event_kind`,
       )
       .all(sessionId) as unknown as AttributionRow[];
-    return rows.map((r) => ({
-      sessionId: r.session_id,
-      snapshotId: r.snapshot_id,
-      observedAt: r.observed_at,
-      eventKind: r.event_kind as AttributionEventKind,
-      source: r.source,
-    }));
+    return rows.map(rowToAttribution);
+  }
+
+  /**
+   * Every `note` attribution attached to a snapshot, ordered by
+   * observed_at. Returns empty array if the snapshot has never been
+   * annotated.
+   */
+  notesOf(snapshotId: string): Attribution[] {
+    const rows = this.db
+      .prepare(
+        `SELECT session_id, snapshot_id, observed_at, event_kind, source, note_text
+           FROM attributions
+          WHERE event_kind = 'note' AND snapshot_id = ?
+          ORDER BY observed_at`,
+      )
+      .all(snapshotId) as unknown as AttributionRow[];
+    return rows.map(rowToAttribution);
   }
 
   /**
@@ -347,7 +374,6 @@ export class IndexDb {
       parentIds: parents.map((p) => p.parent_id),
       branch: row.branch,
       kind: row.kind,
-      message: row.message,
       codePin: row.code_pin,
       apmLockHash: row.apm_lock_hash,
       createdAt: row.created_at,
@@ -479,7 +505,6 @@ interface SnapshotRow {
   id: string;
   branch: string;
   kind: SnapshotKind;
-  message: string | null;
   version: string | null;
   code_pin: string | null;
   apm_lock_hash: string | null;
@@ -496,6 +521,18 @@ interface AttributionRow {
   observed_at: string;
   event_kind: string;
   source: string | null;
+  note_text: string | null;
+}
+
+function rowToAttribution(r: AttributionRow): Attribution {
+  return {
+    sessionId: r.session_id,
+    snapshotId: r.snapshot_id,
+    observedAt: r.observed_at,
+    eventKind: r.event_kind as AttributionEventKind,
+    source: r.source,
+    noteText: r.note_text,
+  };
 }
 
 interface ModuleRow {

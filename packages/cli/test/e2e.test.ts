@@ -6,9 +6,9 @@ import { runCli, runHook } from './util.js';
 
 // End-to-end: init → hook → log → diff round-trip on a real tmpdir.
 //
-// Per B2 pin: HEAD~N syntax is NOT in v0.1; we resolve the two snapshot
-// ids by parsing `harness log` output (the public, supported way) and
-// passing them as 8-char hex prefixes to `harness diff`.
+// HEAD~N syntax is NOT in v0.3; we resolve the two snapshot ids by
+// parsing `harness log` output (the public, supported way) and passing
+// them as 8-char hex prefixes to `harness diff`.
 
 describe('e2e: init → hook → log → diff', () => {
   test('full round trip on a fresh tmpdir', async () => {
@@ -32,12 +32,13 @@ describe('e2e: init → hook → log → diff', () => {
     const hook1 = await runHook(['--session-id', 'e2e-1', '--cwd', cwd], { cwd });
     expect(hook1.code).toBe(0);
 
-    // 4. log shows one snapshot. v0.2 hook-driven captures emit
-    //    `(no message)` since the message field is null on the blob.
+    // 4. log shows one snapshot. v0.3 has no message field; the row
+    //    summary is computed at read time from summarizeDiff(), which
+    //    renders `init` for root snapshots.
     const log1 = await runCli(['log'], { cwd });
     expect(log1.code).toBe(0);
     expect(log1.stdout.trim().split('\n').length).toBe(1);
-    expect(log1.stdout).toMatch(/\(no message\)/);
+    expect(log1.stdout).toMatch(/init/);
 
     // 5. mutate the skill, fire the hook again
     writeFileSync(
@@ -48,22 +49,21 @@ describe('e2e: init → hook → log → diff', () => {
     const hook2 = await runHook(['--session-id', 'e2e-2', '--cwd', cwd], { cwd });
     expect(hook2.code).toBe(0);
 
-    // 6. diff via explicit ids parsed from log output (NOT HEAD~1 — that's v0.2)
+    // 6. diff via explicit ids parsed from log output
     const log2 = await runCli(['log'], { cwd });
     const lines = log2.stdout.trim().split('\n');
     expect(lines.length).toBe(2);
-    const idNew = lines[0]!.split(' ')[0]!;  // first column = 8-char id prefix
+    const idNew = lines[0]!.split(' ')[0]!;
     const idOld = lines[1]!.split(' ')[0]!;
     expect(idNew).toMatch(/^[0-9a-f]{8}$/);
     expect(idOld).toMatch(/^[0-9a-f]{8}$/);
 
     const diffR = await runCli(['diff', idOld, idNew], { cwd });
     expect(diffR.code).toBe(0);
-    // The configHash of the research skill changed → one ~ change op
     expect(diffR.stdout).toMatch(/research/);
     expect(diffR.stdout).toMatch(/~1 changed/);
 
-    // 7. tag the new tip, then resolve it via tag name
+    // 7. tag the new tip, then resolve via tag name
     const tagR = await runCli(['tag', 'v0.1'], { cwd });
     expect(tagR.code).toBe(0);
     const diffViaTag = await runCli(['diff', idOld, 'v0.1'], { cwd });
@@ -75,13 +75,10 @@ describe('e2e: init → hook → log → diff', () => {
     const cwd = mkdtempSync(join(tmpdir(), 'harness-e2e-installhook-'));
     await runCli(['init'], { cwd });
 
-    // install the hook (with confirmation)
     const installR = await runCli(['install-hook'], { cwd, input: 'y\n' });
     expect(installR.code).toBe(0);
     expect(existsSync(join(cwd, '.claude/settings.json'))).toBe(true);
 
-    // simulate Claude Code's SessionStart by spawning the hook directly
-    // — install-hook just wires the command; nothing fires it inside a test.
     mkdirSync(join(cwd, '.claude/skills/foo'), { recursive: true });
     writeFileSync(join(cwd, '.claude/skills/foo/SKILL.md'), '# foo\n', 'utf-8');
     const hookR = await runHook(['--session-id', 'simulated-1', '--cwd', cwd], { cwd });
@@ -89,7 +86,8 @@ describe('e2e: init → hook → log → diff', () => {
 
     const log = await runCli(['log'], { cwd });
     expect(log.code).toBe(0);
-    expect(log.stdout).toMatch(/\(no message\)/);
+    // First-ever snapshot is kind=init; summarizeDiff renders "init".
+    expect(log.stdout).toMatch(/init/);
   });
 
   test('install-hook installs both SessionStart and UserPromptSubmit entries', async () => {
@@ -107,33 +105,55 @@ describe('e2e: init → hook → log → diff', () => {
   });
 });
 
-describe('e2e: v0.2 commands (snap, sessions, migrate)', () => {
-  test('snap with -m writes a manual snapshot with the message', async () => {
+describe('e2e: v0.3 commands (snap, sessions, notes)', () => {
+  test('snap "<note>" captures and attaches a note attribution', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'harness-e2e-snap-'));
     await runCli(['init'], { cwd });
     mkdirSync(join(cwd, '.claude/skills/research'), { recursive: true });
     writeFileSync(join(cwd, '.claude/skills/research/SKILL.md'), '# r\n', 'utf-8');
 
-    const r = await runCli(['snap', '-m', 'baseline capture'], { cwd });
+    const r = await runCli(['snap', 'baseline capture'], { cwd });
     expect(r.code).toBe(0);
     expect(r.stdout).toMatch(/Captured.*baseline capture/);
 
+    // The note is queryable via `harness notes <ref>`.
     const log = await runCli(['log'], { cwd });
-    expect(log.stdout).toMatch(/baseline capture/);
+    const id8 = log.stdout.trim().split(' ')[0]!;
+    const notesR = await runCli(['notes', id8], { cwd });
+    expect(notesR.code).toBe(0);
+    expect(notesR.stdout).toMatch(/baseline capture/);
+    expect(notesR.stdout).toMatch(/<manual>/);
   });
 
-  test('snap without -m on unchanged composition is attribution-only', async () => {
+  test('snap with no note argument errors out (v0.3 — note is required)', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'harness-e2e-snap-nonote-'));
+    await runCli(['init'], { cwd });
+    mkdirSync(join(cwd, '.claude/skills/research'), { recursive: true });
+    writeFileSync(join(cwd, '.claude/skills/research/SKILL.md'), '# r\n', 'utf-8');
+    const r = await runCli(['snap'], { cwd });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toMatch(/note is required/);
+  });
+
+  test('snap "<note>" on unchanged composition appends a note without writing a new snapshot', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'harness-e2e-snap-noop-'));
     await runCli(['init'], { cwd });
     mkdirSync(join(cwd, '.claude/skills/research'), { recursive: true });
     writeFileSync(join(cwd, '.claude/skills/research/SKILL.md'), '# r\n', 'utf-8');
-    await runCli(['snap'], { cwd });
-    const r = await runCli(['snap'], { cwd });
+    await runCli(['snap', 'first'], { cwd });
+    const r = await runCli(['snap', 'second'], { cwd });
     expect(r.code).toBe(0);
     expect(r.stdout).toMatch(/No composition change/);
-    // Still 1 snapshot total.
+    // Still 1 snapshot total (note rows are not new snapshots).
     const log = await runCli(['log'], { cwd });
     expect(log.stdout.trim().split('\n').length).toBe(1);
+    // But two notes are queryable.
+    const id8 = log.stdout.trim().split(' ')[0]!;
+    const notesR = await runCli(['notes', id8], { cwd });
+    expect(notesR.code).toBe(0);
+    expect(notesR.stdout).toMatch(/first/);
+    expect(notesR.stdout).toMatch(/second/);
+    expect(notesR.stdout).toMatch(/2 notes/);
   });
 
   test('sessions <id> prints a trajectory with snapshot transitions', async () => {
@@ -141,7 +161,6 @@ describe('e2e: v0.2 commands (snap, sessions, migrate)', () => {
     await runCli(['init'], { cwd });
     mkdirSync(join(cwd, '.claude/skills/research'), { recursive: true });
     writeFileSync(join(cwd, '.claude/skills/research/SKILL.md'), '# r\n', 'utf-8');
-    // Two fires same session, no composition change between them.
     await runHook(['--session-id', 'traj-test', '--cwd', cwd, '--hook-event-name', 'SessionStart'], { cwd });
     await runHook(['--session-id', 'traj-test', '--cwd', cwd, '--hook-event-name', 'UserPromptSubmit'], { cwd });
     const r = await runCli(['sessions', 'traj-test'], { cwd });
@@ -165,17 +184,6 @@ describe('e2e: v0.2 commands (snap, sessions, migrate)', () => {
     expect(r.stdout).toMatch(/sB/);
   });
 
-  test('migrate on a fresh v0.2.0 repo reports nothing-to-do', async () => {
-    const cwd = mkdtempSync(join(tmpdir(), 'harness-e2e-migrate-'));
-    await runCli(['init'], { cwd });
-    mkdirSync(join(cwd, '.claude/skills/research'), { recursive: true });
-    writeFileSync(join(cwd, '.claude/skills/research/SKILL.md'), '# r\n', 'utf-8');
-    await runHook(['--session-id', 's', '--cwd', cwd], { cwd });
-    const r = await runCli(['migrate'], { cwd });
-    expect(r.code).toBe(0);
-    expect(r.stdout).toMatch(/Nothing to migrate/);
-  });
-
   test('log --with-sessions shows session count per snapshot', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'harness-e2e-log-sessions-'));
     await runCli(['init'], { cwd });
@@ -186,5 +194,24 @@ describe('e2e: v0.2 commands (snap, sessions, migrate)', () => {
     const r = await runCli(['log', '--with-sessions'], { cwd });
     expect(r.code).toBe(0);
     expect(r.stdout).toMatch(/\[2 sessions\]/);
+  });
+
+  test('notes across sessions: a snapshot annotated by two different sessions surfaces both', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'harness-e2e-notes-cross-'));
+    await runCli(['init'], { cwd });
+    mkdirSync(join(cwd, '.claude/skills/research'), { recursive: true });
+    writeFileSync(join(cwd, '.claude/skills/research/SKILL.md'), '# r\n', 'utf-8');
+    // First a hook fire from a real session captures the snapshot.
+    await runHook(['--session-id', 'real-A', '--cwd', cwd], { cwd });
+    // Then a CLI note (sessionId='<manual>') against unchanged composition.
+    await runCli(['snap', 'manual annotation A'], { cwd });
+    // Get the snapshot id and query notes.
+    const log = await runCli(['log'], { cwd });
+    const id8 = log.stdout.trim().split(' ')[0]!;
+    const notesR = await runCli(['notes', id8], { cwd });
+    expect(notesR.code).toBe(0);
+    expect(notesR.stdout).toMatch(/manual annotation A/);
+    expect(notesR.stdout).toMatch(/<manual>/);
+    expect(notesR.stdout).toMatch(/1 note from 1 session/);
   });
 });

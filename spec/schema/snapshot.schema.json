@@ -9,7 +9,6 @@
     "parentIds",
     "branch",
     "kind",
-    "message",
     "codePin",
     "createdAt",
     "modules"
@@ -18,9 +17,9 @@
   "properties": {
     "formatVersion": {
       "type": "string",
-      "description": "Optional; defaults to \"0.2\" if absent. Major version mismatch is a hard error per format.md §9.",
+      "description": "Optional; defaults to \"0.3\" if absent. Major version mismatch is a hard error per format.md §9.",
       "pattern": "^[0-9]+\\.[0-9]+$",
-      "default": "0.2"
+      "default": "0.3"
     },
     "id": {
       "type": "string",
@@ -42,11 +41,7 @@
     },
     "kind": {
       "type": "string",
-      "enum": ["init", "manual", "tag"]
-    },
-    "message": {
-      "type": ["string", "null"],
-      "description": "Human-readable one-line summary, or null for hook-captured snapshots that have no user-supplied message. Multi-line MAY be permitted by writers; readers MUST handle either."
+      "enum": ["init", "auto", "tag"]
     },
     "version": {
       "type": ["string", "null"],

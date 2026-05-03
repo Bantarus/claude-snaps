@@ -1,0 +1,41 @@
+{
+  "apmLockHash": null,
+  "branch": "main",
+  "codePin": null,
+  "createdAt": "2026-04-05T00:01:00.000Z",
+  "formatVersion": "0.3",
+  "id": "afcfbf5eb0db9cd72ca44b4ba8b5c3e7c7a628de",
+  "kind": "auto",
+  "model": "claude-opus-4-7",
+  "modules": [
+    {
+      "enabled": true,
+      "name": "senior-eng",
+      "source": {
+        "kind": "local",
+        "path": ".claude/agents/senior-eng.md"
+      },
+      "type": "chatmode"
+    },
+    {
+      "enabled": true,
+      "name": "Read",
+      "source": {
+        "kind": "builtin"
+      },
+      "type": "mcp"
+    },
+    {
+      "enabled": true,
+      "name": "Bash",
+      "source": {
+        "kind": "builtin"
+      },
+      "type": "mcp"
+    }
+  ],
+  "parentIds": [
+    "f5e6cac2653911ae8338cd58c683b5fbff9abf3c"
+  ],
+  "permissionMode": "default"
+}

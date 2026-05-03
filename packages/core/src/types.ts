@@ -29,17 +29,13 @@ export interface Module {
   source: ModuleSource;
 }
 
-export type SnapshotKind = 'init' | 'manual' | 'tag';
+export type SnapshotKind = 'init' | 'auto' | 'tag';
 
 export interface Snapshot {
   id: string;
   parentIds: string[];
   branch: string;
   kind: SnapshotKind;
-  // Nullable in v0.2.0: hook-captured snapshots have no user-supplied
-  // message and write `null`. Manual `harness snap -m <msg>` writes the
-  // user's text; tag operations write the tag annotation.
-  message: string | null;
   version?: string;
   codePin: string | null;
   apmLockHash: string | null;
@@ -55,13 +51,14 @@ export interface Snapshot {
 }
 
 // Attribution event — a session's observation of a snapshot at an
-// instant. Lives in lineage.sqlite only; no on-disk blob form. See
-// spec/format.md §2.7 and §5.4. Implementation lands in step 4.
+// instant, optionally carrying a free-form note. Lives in lineage.sqlite
+// only; no on-disk blob form. See spec/format.md §2.7 and §5.4.
 export type AttributionEventKind =
-  | 'session_start'    // SessionStart hook fired (fresh session)
+  | 'session_start'    // SessionStart hook fired (any source: startup/resume/clear/compact)
   | 'user_prompt'      // UserPromptSubmit hook fired
-  | 'manual_snap'      // user ran `harness snap`
-  | 'migrated';        // backfilled from v0.1.x snapshots.session_id
+  | 'manual_capture'   // non-CLI writer captured composition without an annotation
+  | 'note'             // user attached an annotation via `harness snap "<text>"`
+  | 'migrated';        // reserved for backfill events; no v0.3 writer emits this
 
 export interface Attribution {
   sessionId: string;
@@ -69,6 +66,9 @@ export interface Attribution {
   observedAt: string;
   eventKind: AttributionEventKind;
   source: string | null; // 'startup'|'resume'|'clear'|'compact' for session_start; null otherwise
+  // Non-null iff eventKind === 'note'. Enforced both at write time in
+  // Repo.observe()/note() and by SQL CHECK (004_v0_3_notes.sql).
+  noteText: string | null;
 }
 
 export interface DiffOp {

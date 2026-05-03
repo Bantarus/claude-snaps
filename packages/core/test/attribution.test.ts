@@ -46,7 +46,6 @@ describe('Repo.observe — composition-change detection (Gate 13)', () => {
       const snap = repo.snapshot(id);
       expect(snap.kind).toBe('init');
       expect(snap.parentIds).toEqual([]);
-      expect(snap.message).toBeNull();
       expect(snap.modules.length).toBeGreaterThan(0);
 
       const trajectory = repo.trajectoryOf('sess-1');
@@ -57,6 +56,7 @@ describe('Repo.observe — composition-change detection (Gate 13)', () => {
         observedAt: '2026-05-02T12:00:00.000Z',
         eventKind: 'session_start',
         source: 'startup',
+        noteText: null,
       });
 
       // Branch ref advanced.
@@ -110,7 +110,7 @@ describe('Repo.observe — composition-change detection (Gate 13)', () => {
       expect(repo.branchTip('main')).toBe(id2);
 
       const snap2 = repo.snapshot(id2);
-      expect(snap2.kind).toBe('manual');
+      expect(snap2.kind).toBe('auto');
       expect(snap2.parentIds).toEqual([id1]);
 
       const trajectory = repo.trajectoryOf('sess-1');
@@ -339,9 +339,9 @@ describe('schema migration 001 + 002 (Gate 11 — schema)', () => {
       repo.close();
     }
 
-    // Schema migrated past v2 to current (Repo.open chains 001 → 002 → 003).
+    // Schema migrated past v2 to current (Repo.open chains 001 → 002 → 003 → 004).
     const verify = new DatabaseSync(dbPath, { readOnly: true });
-    expect(verify.prepare('SELECT version FROM _schema').get()).toEqual({ version: 3 });
+    expect(verify.prepare('SELECT version FROM _schema').get()).toEqual({ version: 4 });
     verify.close();
   });
 });

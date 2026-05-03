@@ -18,14 +18,15 @@ codebase.
 
 | | |
 |---|---|
-| Version | **0.2.0** Working Draft |
+| Version | **0.3.0** Working Draft |
 | Stability | **Unstable.** May change without notice until v1.0. |
 | License | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Conformance | [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119) MUST / SHOULD / MAY |
-| What's locked | Filesystem layout (§1), required snapshot fields (§2.1), the `init`/`manual`/`tag` kind vocabulary (§2.2), attribution events (§2.7), id derivation (§3), DAG/refs/HEAD semantics (§4), SQL schema v2, type vocabulary aliases. |
-| What may still move | Float canonicalization tightening, the `_meta` table fields, masked-path glob semantics, `kind: "tag"` annotations, the `attributions.event_kind` enum (additions only via spec amendment). |
-| Out of scope for v0.2 | Local-source content storage, multi-machine sync semantics, annotated tags, reflog, merge-kind snapshots (parent length 2 is reserved but not produced), additional hook events (`PreCompact`, `SessionEnd`, `ConfigChange`), user-level capture (`~/.claude/`). |
-| Migration from v0.1.x | Run `harness migrate`. Idempotent; deduplicates compositions that became byte-identical after `sessionId` removal. See [format.md §9.5](format.md#95-migration-from-v01x--v020). |
+| What's locked | Filesystem layout (§1), required snapshot fields (§2.1), the `init`/`auto`/`tag` kind vocabulary (§2.2), attribution events including `note` (§2.7), id derivation (§3), DAG/refs/HEAD semantics (§4), SQL schema v4, type vocabulary aliases. |
+| What may still move | Float canonicalization tightening, the `_meta` table fields, masked-path glob semantics, the `attributions.event_kind` enum (additions only via spec amendment). |
+| Out of scope for v0.3 | Local-source content storage, multi-machine sync semantics, annotated tags, reflog, merge-kind snapshots (parent length 2 is reserved but not produced), additional hook events (`PreCompact`, `SessionEnd`, `ConfigChange`), user-level capture (`~/.claude/`), the `harness reproduce` reproducer. |
+| Migration from v0.1.x → v0.2.0 | Run `harness migrate`. Idempotent; deduplicates compositions that became byte-identical after `sessionId` removal. See [format.md §9.5](format.md#95-migration-from-v01x--v020-historical). |
+| Migration from v0.2.x → v0.3.0 | **No automated migration.** Back up `.harness/`, delete it, and re-init. Rationale in [format.md §9.6](format.md#96-v02x--v030-no-automated-migration). |
 
 ## Reading order
 
@@ -58,8 +59,8 @@ blob is real, content-addressable, and validates against
 | [empty/](examples/empty/) | 0 | 0 | 0 | n/a | A freshly-initialized `.harness/` (just `HEAD` + `config`). Pinned semantics in [format.md §4.4](format.md#44-the-empty-repository). |
 | [solo-no-apm/](examples/solo-no-apm/) | 5 | 1 (main) | 1 (v0.2) | no | Single-developer flow, all `local` / `builtin` modules, `apmLockHash: null` throughout. |
 | [solo-with-apm/](examples/solo-with-apm/) | 3 | 1 (main) | 1 (v0.1) | yes | All primitives sourced from APM, `apmLockHash` set, demonstrates the `apm` source variant. |
-| [team-shared/](examples/team-shared/) | 5 | 2 (main, experimental) | 1 (v0.4) | yes | Mix of APM (depths 1 and 2), local, and builtin modules. Includes a `fork` snapshot creating the experimental branch. |
-| [compat-fixtures/](examples/compat-fixtures/) | 5 | 1 (main) | 0 | n/a | **Reader-compat fixture.** Synthetic blobs v0.1 writers do not produce: a merge node (`parentIds.length === 2`), and a module with an unknown `x-experimental-bundle` source kind. Used to verify a reader implements the forward-compat rules in [format.md §4.1](format.md#41-parents) and [§9.2](format.md#92-forward-compat-unknown-fields-and-variants). |
+| [team-shared/](examples/team-shared/) | 5 | 2 (main, experimental) | 1 (v0.4) | yes | Mix of APM (depths 1 and 2), local, and builtin modules. The fork onto `experimental` is a plain `auto` snapshot whose new branch ref defines the fork. |
+| [compat-fixtures/](examples/compat-fixtures/) | 5 | 1 (main) | 0 | n/a | **Reader-compat fixture.** Synthetic blobs writers do not produce: a merge node (`parentIds.length === 2`), and a module with an unknown `x-experimental-bundle` source kind. Used to verify a reader implements the forward-compat rules in [format.md §4.1](format.md#41-parents) and [§9.2](format.md#92-forward-compat-unknown-fields-and-variants). |
 
 `lineage.sqlite` is **omitted** from every example: it is a derivable index
 (see [format.md §5](format.md#5-the-sqlite-index-lineagesqlite)). Run
@@ -72,15 +73,14 @@ rebuild the JSON blobs and refs from the source-of-truth definitions.
 ### Canonical-id test vector
 
 The single normative test vector for snapshot id derivation is in
-[format.md §3.2](format.md#32-test-vector), with the byte-exact
+[format.md §3.3](format.md#33-test-vector), with the byte-exact
 canonical bytes also stored as a fixture file:
 [test-vectors/canonical-501.bin](test-vectors/canonical-501.bin)
-(501 bytes UTF-8). An implementation that reproduces those bytes from
-the input shown in §3.2 — and computes digest
-`977d89c4deef44ae18ab764350d01a54357b84ec` from the fixture — is
-conforming for §3. See
-[test-vectors/README.md](test-vectors/README.md) for the recommended
-cross-language test pattern.
+(filename historical from the v0.1 era; current size and digest are
+documented in [test-vectors/README.md](test-vectors/README.md) along
+with the preserved v0.1.1 and v0.2.0 historical fixtures). An
+implementation that reproduces the byte-exact fixture from the §3.3
+input is conforming for §3.
 
 ### Validating examples
 
@@ -177,7 +177,7 @@ prevent.
 - It is not an implementation, library, or CLI. Those consume the
   format.
 - It does not specify multi-machine sync or team merge semantics beyond
-  the `[gitignore].policy` knob in `config`. Those are v0.2.
+  the `[gitignore].policy` knob in `config`. Those are v0.4.
 - It does not require a specific JCS library. The canonical-bytes rule is
   a strict subset of [RFC 8785](https://datatracker.ietf.org/doc/html/rfc8785)
   sufficient for the snapshot domain — implementable in any language that
@@ -186,7 +186,7 @@ prevent.
 - It does not define a build, lint, or doc-site toolchain. The four
   documents and three machine-readable schemas are the entire deliverable.
 
-## Open issues for v0.1 → v1.0
+## Open issues for v0.3 → v1.0
 
 - **Float canonicalization.** Currently RFC 8785 §3.2.2.3 by reference;
   example writer restricts itself to integers. Real-world snapshots may

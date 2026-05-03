@@ -93,7 +93,7 @@ describe('Repo on team-shared example', () => {
       const main = repo.branchTip('main'); // v0.4 tag node
       const exp = repo.branchTip('experimental');
       const lcaId = repo.lca(main, exp);
-      expect(lcaId).toBe('0ab4f7c92c551342fb585c709dc6e5c2bbb71c89'); // v0.4 tag
+      expect(lcaId).toBe('b7845e7a63d3e82701523c97c2b5c9c89f9a2958'); // v0.4 tag
     } finally {
       repo.close();
     }

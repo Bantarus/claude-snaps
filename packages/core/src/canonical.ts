@@ -8,8 +8,8 @@ import type { Snapshot } from './types.js';
 //      do NOT depend on V8 insertion order.
 //   2. No whitespace between tokens. JSON.stringify with no `space`.
 //   3. UTF-8 via TextEncoder (not Buffer — semantics drift across runtimes).
-//   4. Numbers: integer-only in v0.2 examples. Non-integer throws
-//      IntegrityError; RFC 8785 number canonicalization is v0.3.
+//   4. Numbers: integer-only in v0.3 examples. Non-integer throws
+//      IntegrityError; RFC 8785 number canonicalization is v0.4.
 //   5. Fields enumerated in spec/format.md §3.1 are removed before
 //      hashing — destructure, do not mutate. The exclusion list is the
 //      composition-defining vs. observation-context split: composition
@@ -46,7 +46,7 @@ export function canonicalBytes(value: unknown): Uint8Array {
   // JSON.stringify with no `space` emits the no-whitespace form.
   // TextEncoder produces UTF-8 with no BOM. Together these match Python's
   // json.dumps(obj, sort_keys=True, separators=(',',':'), ensure_ascii=False)
-  // for the integer-only domain we use in v0.1.
+  // for the integer-only domain we use in v0.3.
   return ENCODER.encode(JSON.stringify(sorted));
 }
 
@@ -87,7 +87,7 @@ function assertIntegerNumbers(value: unknown): void {
     }
     if (!Number.isInteger(value)) {
       throw new IntegrityError(
-        `non-integer numeric value (${String(value)}); RFC 8785 number canonicalization not implemented in v0.2`,
+        `non-integer numeric value (${String(value)}); RFC 8785 number canonicalization not implemented in v0.3`,
       );
     }
     return;

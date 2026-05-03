@@ -142,8 +142,8 @@ Given a snapshot at `.harness/snapshots/<aa>/<rest>.json`, the operation
    reproducer asserts the runtime provides them.
 
 The contract is: **APM-sourced primitives are reproducible via APM;
-local-source primitives in v0.2 are not.** v0.3 is expected to address
-local content storage; see [format.md §9.4](format.md#94-what-v03-is-expected-to-add).
+local-source primitives in v0.3 are not.** v0.4 is expected to address
+local content storage; see [format.md §9.4](format.md#94-what-v04-is-expected-to-add).
 
 ## 6. Worked example
 

@@ -11,8 +11,8 @@ const SPEC_DIR = resolve(here, '../../../spec');
 const TEAM = resolve(SPEC_DIR, 'examples/team-shared');
 
 // v0.2.0 fixture ids (regenerated under §3.1 strip; see spec/test-vectors/README.md).
-const MAIN_TIP = '0ab4f7c92c551342fb585c709dc6e5c2bbb71c89';
-const EXP_TIP = '50f074787cd86a84dee47859ed631dcd2fd70019';
+const MAIN_TIP = 'b7845e7a63d3e82701523c97c2b5c9c89f9a2958';
+const EXP_TIP = 'bd0e0cc3807d73a2e7990a9e7f04ab10c6d1833e';
 
 function copyExample(name: string): string {
   const proj = mkdtempSync(join(tmpdir(), `harness-resolve-${name}-`));

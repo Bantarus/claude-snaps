@@ -206,22 +206,28 @@ export class Repo {
     return captureCurrentState(this.projectRoot);
   }
 
-  // ── observe / attribution (v0.2.0 — spec/format.md §2.7) ─────────────
+  // ── observe / note / attribution (v0.3.0 — spec/format.md §2.7) ──────
 
   /**
    * Capture the current `.claude/` composition and record an
-   * attribution event. The load-bearing v0.2.0 write API.
+   * attribution event WITHOUT a free-form note. The load-bearing v0.3
+   * write API for hook-driven captures and other automated writers.
    *
-   * If the captured composition matches an existing snapshot on the
-   * current branch, no new snapshot blob is written; only the
-   * attribution row is appended. Otherwise: writes a new `manual`-kind
-   * snapshot (or `init` on the empty-repo first fire), advances the
-   * current branch ref to its id, then appends the attribution.
+   * If the captured composition matches the snapshot at the current
+   * branch tip, no new snapshot blob is written; only the attribution
+   * row is appended. Otherwise: writes a new `auto`-kind snapshot (or
+   * `init` on the empty-repo first fire), advances the current branch
+   * ref to its id, then appends the attribution.
    *
    * Returns the snapshot id the attribution points at (existing or new).
    *
    * Idempotent on the (sessionId, observedAt, eventKind) primary key
    * of the attributions table — a duplicate fire is silently dropped.
+   *
+   * The `eventKind` is narrowed to exclude `'note'` and `'migrated'`:
+   * note events go through `note()` (which carries the required text),
+   * and `migrated` is reserved for backfill and not emitted by any v0.3
+   * writer.
    *
    * @throws {InvalidStateError} if HEAD is detached. The hook always
    * operates on a branch; `harness checkout <id>` puts the repo into
@@ -229,10 +235,8 @@ export class Repo {
    */
   observe(event: {
     sessionId: string;
-    eventKind: AttributionEventKind;
+    eventKind: Exclude<AttributionEventKind, 'note' | 'migrated'>;
     source?: string | null;
-    /** Used only when a NEW snapshot is written. Persisted as snap.message. */
-    message?: string | null;
     /** Optional pass-through onto a newly-written snapshot. */
     model?: string;
     permissionMode?: string;
@@ -240,6 +244,93 @@ export class Repo {
      * Override createdAt / observedAt. Defaults to now. Tests use this
      * for deterministic timestamps; the hook should leave it unset.
      */
+    now?: string;
+  }): string {
+    return this.#captureAndAttribute({
+      sessionId: event.sessionId,
+      eventKind: event.eventKind,
+      source: event.source ?? null,
+      noteText: null,
+      ...(event.model !== undefined ? { model: event.model } : {}),
+      ...(event.permissionMode !== undefined ? { permissionMode: event.permissionMode } : {}),
+      ...(event.now !== undefined ? { now: event.now } : {}),
+    });
+  }
+
+  /**
+   * Capture current composition (writing a new snapshot if novel) and
+   * attach a `note` attribution carrying the user's text. The text is
+   * required; per spec/format.md §2.7 there is no anonymous CLI
+   * capture path.
+   *
+   * Returns the snapshot id the note is attached to.
+   *
+   * Atomic at the writer-API level: either both the capture and the
+   * note succeed, or neither does (any throw before insertAttribution
+   * leaves the snapshot table unchanged because writeSnapshot's effects
+   * are visible only after a successful return; the SQL insert and any
+   * blob/ref writes commit together inside writeSnapshot).
+   *
+   * @throws {InvalidStateError} on detached HEAD (same as observe).
+   */
+  note(args: {
+    sessionId: string;
+    noteText: string;
+    /** Optional pass-through onto a newly-written snapshot. */
+    model?: string;
+    permissionMode?: string;
+    now?: string;
+  }): string {
+    if (typeof args.noteText !== 'string' || args.noteText.length === 0) {
+      throw new InvalidStateError('note() requires a non-empty noteText');
+    }
+    return this.#captureAndAttribute({
+      sessionId: args.sessionId,
+      eventKind: 'note',
+      source: null,
+      noteText: args.noteText,
+      ...(args.model !== undefined ? { model: args.model } : {}),
+      ...(args.permissionMode !== undefined ? { permissionMode: args.permissionMode } : {}),
+      ...(args.now !== undefined ? { now: args.now } : {}),
+    });
+  }
+
+  /**
+   * Trajectory of a session: ordered list of attribution events
+   * (sessionId, snapshotId, observedAt, eventKind, source, noteText).
+   * Notes appear inline at their observation timestamps. Empty if the
+   * session was never observed.
+   */
+  trajectoryOf(sessionId: string): Attribution[] {
+    return this.db.trajectoryOf(sessionId);
+  }
+
+  /**
+   * Every `note` attribution attached to a snapshot, regardless of
+   * which session attached it. Ordered by observed_at. Empty if the
+   * snapshot has never been annotated.
+   */
+  notesOf(snapshotId: string): Attribution[] {
+    return this.db.notesOf(snapshotId);
+  }
+
+  /**
+   * Sessions that observed a given snapshot, with first/last observation
+   * timestamps. Inverse of trajectoryOf.
+   */
+  sessionsAt(snapshotId: string): Array<{ sessionId: string; firstObservedAt: string; lastObservedAt: string }> {
+    return this.db.sessionsAt(snapshotId);
+  }
+
+  // ── shared capture-and-attribute path used by observe() and note() ──
+
+  #captureAndAttribute(event: {
+    sessionId: string;
+    eventKind: AttributionEventKind;
+    source: string | null;
+    noteText: string | null;
+    model?: string;
+    permissionMode?: string;
     now?: string;
   }): string {
     const observedAt = event.now ?? new Date().toISOString();
@@ -252,17 +343,15 @@ export class Repo {
     }
     const branchName = this.currentBranchName() ?? DEFAULT_BRANCH;
     const headId = this.resolveHead();
-    const message = event.message ?? null;
     const modules = this.workingTree();
     const apmLockHash = this.apmLockHash();
 
-    // No-change path: head exists, no user message, and the live
-    // composition matches the head snapshot. Append attribution only;
-    // do NOT advance the branch ref. A user-supplied message ALWAYS
-    // forces a new snapshot — the message participates in canonical
-    // bytes (§3.1), so a messaged capture is a distinct snapshot from
-    // a no-message one even with identical modules.
-    if (headId !== null && message === null) {
+    // No-change path: head exists and the live composition matches the
+    // head snapshot. Append attribution only; do NOT advance the
+    // branch ref. v0.3 has no writer-supplied data that would force a
+    // new snapshot for unchanged composition (the v0.2 message-as-canon
+    // mechanism is gone — annotations live on attribution rows).
+    if (headId !== null) {
       const headSnap = this.snapshot(headId);
       if (
         headSnap.apmLockHash === apmLockHash &&
@@ -273,7 +362,8 @@ export class Repo {
           snapshotId: headId,
           observedAt,
           eventKind: event.eventKind,
-          source: event.source ?? null,
+          source: event.source,
+          noteText: event.noteText,
         });
         return headId;
       }
@@ -281,11 +371,10 @@ export class Repo {
 
     // Change path: write a new snapshot, advance branch ref, attribute.
     const baseBlob: Omit<Snapshot, 'id'> = {
-      formatVersion: '0.2',
+      formatVersion: '0.3',
       parentIds: headId === null ? [] : [headId],
       branch: branchName,
-      kind: headId === null ? 'init' : 'manual',
-      message,
+      kind: headId === null ? 'init' : 'auto',
       codePin: this.gitSha(),
       apmLockHash,
       createdAt: observedAt,
@@ -303,26 +392,10 @@ export class Repo {
       snapshotId: written.id,
       observedAt,
       eventKind: event.eventKind,
-      source: event.source ?? null,
+      source: event.source,
+      noteText: event.noteText,
     });
     return written.id;
-  }
-
-  /**
-   * Trajectory of a session: ordered list of attribution events
-   * (sessionId, snapshotId, observedAt, eventKind). Empty if the
-   * session was never observed.
-   */
-  trajectoryOf(sessionId: string): Attribution[] {
-    return this.db.trajectoryOf(sessionId);
-  }
-
-  /**
-   * Sessions that observed a given snapshot, with first/last observation
-   * timestamps. Inverse of trajectoryOf.
-   */
-  sessionsAt(snapshotId: string): Array<{ sessionId: string; firstObservedAt: string; lastObservedAt: string }> {
-    return this.db.sessionsAt(snapshotId);
   }
 
   // ── hot-path cache (hook internal; see spec/hooks.md §2.4) ──────────
@@ -357,7 +430,7 @@ export class Repo {
   appendAttribution(event: {
     sessionId: string;
     snapshotId: string;
-    eventKind: AttributionEventKind;
+    eventKind: Exclude<AttributionEventKind, 'note' | 'migrated'>;
     source?: string | null;
     now?: string;
   }): void {
@@ -367,6 +440,7 @@ export class Repo {
       observedAt: event.now ?? new Date().toISOString(),
       eventKind: event.eventKind,
       source: event.source ?? null,
+      noteText: null,
     });
   }
 
