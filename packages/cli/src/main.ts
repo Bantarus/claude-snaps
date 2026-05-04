@@ -10,6 +10,7 @@ import { cmdInstallHook } from './commands/install_hook.js';
 import { cmdSnap } from './commands/snap.js';
 import { cmdSessions } from './commands/sessions.js';
 import { cmdNotes } from './commands/notes.js';
+import { cmdReproduce } from './commands/reproduce.js';
 
 export interface ParsedArgs {
   command: string | null;
@@ -79,7 +80,12 @@ Commands:
                                             snapshot, across sessions.
   tag <name> [<id>] [--force]             Tag a snapshot (defaults to HEAD).
   branch <name> [<id>] [--force]          Create a branch at <id> or HEAD.
-  checkout <ref>                          Move HEAD to <ref>.
+  checkout <ref>                          Move HEAD to <ref>. Does NOT touch
+                                            .claude/. Use 'reproduce' to apply
+                                            the snapshot's composition.
+  reproduce <ref> [--dry-run]             Materialize <ref>'s composition into
+                                            .claude/ via APM. Backs up first;
+                                            advances HEAD on success.
   reindex                                 Rebuild lineage.sqlite from snapshots/.
   install-hook [--force]                  Wire harness-hook into .claude/settings.json
                                             (SessionStart + UserPromptSubmit).
@@ -101,6 +107,7 @@ export async function dispatch(parsed: ParsedArgs): Promise<number> {
     case 'tag':          return cmdTag(parsed);
     case 'branch':       return cmdBranch(parsed);
     case 'checkout':     return cmdCheckout(parsed);
+    case 'reproduce':    return cmdReproduce(parsed);
     case 'reindex':      return cmdReindex(parsed);
     case 'install-hook': return cmdInstallHook(parsed);
     case null:

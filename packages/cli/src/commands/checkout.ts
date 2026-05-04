@@ -32,8 +32,8 @@ export async function cmdCheckout(parsed: ParsedArgs): Promise<number> {
     }
     process.stdout.write(
       `HEAD now at ${id.slice(0, 8)}. Working tree unchanged. ` +
-      `Use 'harness reproduce' to apply this snapshot's harness ` +
-      `composition (not yet implemented).\n`,
+      `Use 'harness reproduce ${ref}' to materialize this snapshot's ` +
+      `harness composition into .claude/.\n`,
     );
   } finally {
     repo.close();
