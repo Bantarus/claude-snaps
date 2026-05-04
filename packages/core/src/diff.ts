@@ -120,7 +120,15 @@ function modulesEqual(a: Module, b: Module): boolean {
   return sourcesEqual(a.source, b.source);
 }
 
-function sourcesEqual(a: Module['source'], b: Module['source']): boolean {
+/**
+ * Module-source equality (used internally by `modulesEqual` and re-used
+ * by `@harness/cli`'s diff renderer to attribute "what changed" without
+ * duplicating the discriminated-union compare here).
+ *
+ * @internal — re-exported from index.ts for the CLI's diff render path
+ * only. Not part of the documented public surface.
+ */
+export function sourcesEqual(a: Module['source'], b: Module['source']): boolean {
   if (a.kind !== b.kind) return false;
   switch (a.kind) {
     case 'builtin':

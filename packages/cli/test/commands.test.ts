@@ -78,6 +78,10 @@ describe('harness log / diff', () => {
     expect(diff.code).toBe(0);
     expect(diff.stdout).toMatch(/research/);
     expect(diff.stdout).toMatch(/~1 changed/);
+    // configHash-drift case (file content edit; no version field) renders
+    // the attribute name, never the literal '?' placeholder.
+    expect(diff.stdout).toMatch(/research\s+\(configHash\)\s+\(changed\)/);
+    expect(diff.stdout).not.toMatch(/\?/);
   });
 
   test('diff with HEAD ref works after at least one snapshot', async () => {

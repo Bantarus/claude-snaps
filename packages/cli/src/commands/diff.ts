@@ -1,6 +1,7 @@
 import { Repo, InvalidStateError } from '@harness/core';
 import { c, GLYPH } from '../format.js';
 import { resolveRef } from '../resolve.js';
+import { renderChangedAttrs } from './diff_render.js';
 import type { ParsedArgs } from '../main.js';
 
 export async function cmdDiff(parsed: ParsedArgs): Promise<number> {
@@ -27,9 +28,10 @@ export async function cmdDiff(parsed: ParsedArgs): Promise<number> {
         process.stdout.write(`${c.rm('−')} ${glyph} ${op.name}${v}            ${c.dim('(removed)')}\n`);
       } else {
         changed++;
-        const vb = op.before?.version ?? '?';
-        const va = op.after?.version ?? '?';
-        process.stdout.write(`${c.chg('~')} ${glyph} ${op.name} ${vb} → ${va}  ${c.dim('(changed)')}\n`);
+        const summary = renderChangedAttrs(op.before!, op.after!);
+        const head = `${c.chg('~')} ${glyph} ${op.name}`;
+        const body = summary === '' ? '' : ` ${summary}`;
+        process.stdout.write(`${head}${body}  ${c.dim('(changed)')}\n`);
       }
     }
     process.stdout.write(

@@ -34,6 +34,6 @@ export { captureCurrentState, captureCurrentStateFast } from './capture.js';
 export { Repo } from './repo.js';
 export type { RepoInitOptions } from './repo.js';
 
-export { diff, summarizeDiff } from './diff.js';
+export { diff, summarizeDiff, sourcesEqual } from './diff.js';
 
 export type { ListSnapshotsFilter, ReindexResult } from './index_db.js';
