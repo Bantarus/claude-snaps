@@ -38,9 +38,14 @@ After exiting:
   # The diff should be visibly minimal — this is the "small drift"
   # signal-to-noise probe.
 
-Optional Session 2 (dedup probe — see PROMPTS.md):
-  Re-launch claude with the SAME prompt or a benign follow-up; do not
-  edit any files. After /exit, verify:
+Optional Session 2 (dedup probe):
+  cd $SOAK_DIR
+  claude --model claude-haiku-4-5-20251001
+  > any other thoughts on the notes skill?
+  /exit
+
+  Do not edit any files between Session 1 and Session 2 — the
+  composition must stay locked. After /exit, verify:
     $HARNESS log | wc -l
     # Expect: NO new snapshot — the second session's composition was
     # unchanged, so the hook took the no-change path and recorded an

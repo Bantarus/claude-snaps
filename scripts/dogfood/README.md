@@ -138,9 +138,12 @@ bash scripts/dogfood/02-add-skill.sh
 #     <any post-actions, e.g. harness tag v0.1>
 ```
 
-The exact prompts to paste live in [`PROMPTS.md`](PROMPTS.md). Some
-days have 2-3 sessions (e.g. an extra `claude --continue` to probe
-the resume path). They're called out per-day there.
+The exact prompts to paste are inlined in each script's `suggest`
+block (printed when you run the script). Some days have 2–4 sessions
+(e.g. extra `claude --continue` runs for resume probes, or fresh
+launches for cross-session dedup) — those follow-up prompts and the
+intent behind them are inlined too. The script is the single source of
+truth for what each day does.
 
 ### Audit at the end
 
@@ -156,8 +159,8 @@ bash scripts/dogfood/audit.sh > soak-report.txt 2>&1
 ## Within the Claude session
 
 Keep prompts short — Haiku is fast and the goal is to fire the hooks,
-not have a deep conversation. Every script suggests a prompt; full
-list in [`PROMPTS.md`](PROMPTS.md). Type the prompt, let Haiku reply,
+not have a deep conversation. Every script suggests a prompt for each
+session it expects you to fire. Type the prompt, let Haiku reply,
 optionally one follow-up, then `/exit`. **Don't get into a long
 session** — the goal is breadth across days, not depth in any one day.
 

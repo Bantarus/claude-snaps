@@ -82,12 +82,27 @@ After exiting:
   # feels cluttered at 4, that's a v0.4 ergonomic backlog item — the
   # CLI may need grouping output by module type.
 
-Multi-session probe (Sessions 2-4 — see PROMPTS.md):
+Multi-session probe (Sessions 2-4):
   Three FRESH claude launches (not --continue): we want distinct
   session_ids landing on the same post-bulk composition to verify
   cross-session dedup. --continue would reuse the session_id and
   test in-session multi-prompt dedup instead — day-3 already covers
   that. No file edits between the three; the composition is locked.
+
+  Session 2:
+    claude --model claude-haiku-4-5-20251001
+    > How would I integrate the git hook into a monorepo where different packages have different linting rules?
+    /exit
+
+  Session 3:
+    claude --model claude-haiku-4-5-20251001
+    > What's a good approach to handle false positives in unused-import detection?
+    /exit
+
+  Session 4:
+    claude --model claude-haiku-4-5-20251001
+    > When is the terse output-style worth using vs hurting communication? One paragraph.
+    /exit
 
   After all three exit:
 

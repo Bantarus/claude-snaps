@@ -56,10 +56,13 @@ Session 1 (with mid-session /clear):
   > say hi after the clear
   /exit
 
-Session 2 (resume — see PROMPTS.md):
+Session 2 (resume after clear):
   claude --continue
-  > <follow-up>
+  > What's the difference between sync and async request handlers?
   /exit
+  # Note: --continue resumes the most-recent session, which is the
+  # POST-clear session_id (not the original pre-clear one). Verify in
+  # the trajectory output below.
 
 After both sessions exit, verify:
 

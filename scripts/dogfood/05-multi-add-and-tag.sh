@@ -88,10 +88,10 @@ User-note probe (no Claude session — direct CLI):
   # The Q2 cross-session-notes query from format.md §2.7. Same query
   # works against any ref (id prefix, branch name, tag name, HEAD).
 
-Resume probe (Session 2 — see PROMPTS.md):
+Resume probe (Session 2):
   cd $SOAK_DIR
   claude --continue
-  > <follow-up prompt from PROMPTS.md>
+  > What's the best way to integrate these new tools into a CI pipeline? I want fast feedback.
   /exit
 
 After the resumed session:
