@@ -82,18 +82,24 @@ After exiting:
   # feels cluttered at 4, that's a v0.4 ergonomic backlog item — the
   # CLI may need grouping output by module type.
 
-Multi-session probe (Sessions 2-3 — see PROMPTS.md):
-  Each follow-up uses claude --continue with a benign question; no file
-  edits between them. After they finish:
+Multi-session probe (Sessions 2-4 — see PROMPTS.md):
+  Three FRESH claude launches (not --continue): we want distinct
+  session_ids landing on the same post-bulk composition to verify
+  cross-session dedup. --continue would reuse the session_id and
+  test in-session multi-prompt dedup instead — day-3 already covers
+  that. No file edits between the three; the composition is locked.
+
+  After all three exit:
 
   $HARNESS log --with-sessions | head -5
-  # Expect: the day-9 snapshot row shows '[2 sessions]' or '[3 sessions]'
-  # depending on how many continues you fired. ONE snapshot, multiple
-  # trajectories — the dedup-at-scale verification.
+  # Expect: the day-9 snapshot row shows '[3 sessions]'. ONE snapshot,
+  # three distinct session_ids — the cross-session dedup verification.
+  # If you see '[1 session]', the launches reused the same session_id
+  # (likely --continue slipped back in); if '[2 sessions]', one of
+  # the launches mutated the composition between fires.
 
   $HARNESS sessions <day-9-session-id>
-  # Expect: the original session's trajectory shows session_start +
-  # user_prompts; resumed sessions show user_prompts only. All point
-  # at the same snapshot id (= sign in trajectory output).
+  # Expect: each session's trajectory shows session_start + user_prompts.
+  # All three point at the same snapshot id (= sign in trajectory output).
 EOF
 )"

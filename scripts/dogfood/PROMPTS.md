@@ -195,10 +195,20 @@ Then run:
 bash scripts/dogfood/09-bulk-add.sh
 ```
 
-**Session 2 (real work on same composition):**
+**Sessions 2, 3, 4 — three FRESH launches on the same post-bulk composition:**
+
+Each is `claude --model claude-haiku-4-5-20251001` (NOT `--continue`). Fresh
+launches mint distinct `session_id`s — that's exactly what we want for the
+cross-session dedup probe. With `--continue`, all prompts would land on one
+session and the probe would degenerate into in-session multi-prompt dedup
+(which day-3 already covers). Do not edit any `.claude/` file between the
+three sessions — the composition must stay locked so all three observations
+land on the same snapshot id.
+
+**Session 2:**
 
 ```
-claude --continue
+claude --model claude-haiku-4-5-20251001
 ```
 
 Then:
@@ -207,10 +217,12 @@ Then:
 How would I integrate the git hook into a monorepo where different packages have different linting rules?
 ```
 
-**Session 3 (optional, real work on same composition):**
+`/exit`.
+
+**Session 3:**
 
 ```
-claude --continue
+claude --model claude-haiku-4-5-20251001
 ```
 
 Then:
@@ -219,7 +231,23 @@ Then:
 What's a good approach to handle false positives in unused-import detection?
 ```
 
-(The goal: realistic busy day — one interesting snapshot followed by normal work conversations. Tests whether the diff renderer handles multiple same-composition sessions gracefully.)
+`/exit`.
+
+**Session 4:**
+
+```
+claude --model claude-haiku-4-5-20251001
+```
+
+Then:
+
+```
+When is the terse output-style worth using vs hurting communication? One paragraph.
+```
+
+`/exit`.
+
+(The goal: realistic busy day — one interesting snapshot observed by three distinct sessions. Verifies the cross-session dedup property: ONE snapshot, `[3 sessions]` annotation, three trajectories all pointing at the same id.)
 
 ---
 
@@ -248,9 +276,9 @@ bash scripts/dogfood/audit.sh
 
 - **Days 01, 02, 04, 06, 08, 10:** 1 session each
 - **Days 03, 05, 07:** 2 sessions each
-- **Day 09:** 2–3 sessions
+- **Day 09:** 4 sessions (Session 1 brainstorm + 3 fresh post-bulk launches for the cross-session dedup probe)
 
-**Total: ~14 sessions across 10 days**. ~1 hour wall-clock, well under $1 in Haiku tokens.
+**Total: ~15 sessions across 10 days**. ~1 hour wall-clock, well under $1 in Haiku tokens.
 
 ---
 
