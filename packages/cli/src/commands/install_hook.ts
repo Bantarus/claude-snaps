@@ -74,7 +74,10 @@ export async function cmdInstallHook(parsed: ParsedArgs): Promise<number> {
   const settingsPath = join(claudeDir, 'settings.json');
 
   // 3. Git hygiene: refuse if settings.json has unstaged changes (only
-  //    when in a git repo and --force is not set).
+  //    when in a git repo and --force is not set). Untracked ('??') and
+  //    ignored ('!!') files are out of scope: they have no committed
+  //    baseline to be lost. The intent is to protect tracked content
+  //    from silent overwrite, not to refuse on any pre-existing file.
   if (!force && existsSync(join(cwd, '.git')) && existsSync(settingsPath)) {
     let porcelain = '';
     try {
@@ -85,7 +88,14 @@ export async function cmdInstallHook(parsed: ParsedArgs): Promise<number> {
     } catch {
       // git unavailable; treat as non-git repo (already in fail-open mode).
     }
-    if (porcelain.trim() !== '') {
+    // git porcelain v1 format: 'XY <path>' where XY are exactly 2 status
+    // chars. We rely on this; v2 has a different shape — do not switch.
+    const lines = porcelain.split('\n').filter((l) => l.length > 0);
+    const dirty = lines.some((l) => {
+      const status = l.slice(0, 2);
+      return status !== '??' && status !== '!!';
+    });
+    if (dirty) {
       throw new IoError(
         `.claude/settings.json has unstaged git changes. Commit, stash, or pass --force.`,
       );
@@ -159,7 +169,7 @@ export async function cmdInstallHook(parsed: ParsedArgs): Promise<number> {
   atomicWrite(settingsPath, afterStr + '\n');
   process.stdout.write(
     `Hook installed. Next session start AND every user prompt in this ` +
-    `directory will be captured by harness-hook (v0.2.0 dual-event).\n`,
+    `directory will be captured by harness-hook.\n`,
   );
   return 0;
 }
