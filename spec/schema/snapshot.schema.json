@@ -17,9 +17,9 @@
   "properties": {
     "formatVersion": {
       "type": "string",
-      "description": "Optional; defaults to \"0.3.1\" if absent. v0.3.x writers MAY emit \"0.3\" (the family default) or a more specific patch like \"0.3.1\". Major version mismatch is a hard error per format.md §9.",
+      "description": "Optional; defaults to \"0.4.0\" if absent. v0.4.x writers MAY emit \"0.4\" (the family default) or a more specific patch like \"0.4.0\". Major version mismatch is a hard error per format.md §9.",
       "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?$",
-      "default": "0.3.1"
+      "default": "0.4.0"
     },
     "id": {
       "type": "string",
@@ -68,6 +68,10 @@
       "type": ["string", "null"],
       "description": "sha256 of apm.lock.yaml bytes at snapshot time, prefixed 'sha256:'. Null when no lockfile present. See apm-integration.md.",
       "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "apmLockfile": {
+      "type": ["string", "null"],
+      "description": "Full text content of apm.lock.yaml at capture time. Null when no lockfile present. Captured to enable self-contained reproduction (format.md §6.1). Added v0.4.0; v0.3.x snapshots have this field absent or null."
     },
     "modules": {
       "type": "array",

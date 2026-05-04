@@ -695,6 +695,88 @@ def build_compat_session_ctx():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Example: solo-with-apm-lockfile/  — v0.4.0 fixture exercising the new
+# `apmLockfile` top-level field. The same lockfile bytes that produce
+# `apmLockHash` are also stored verbatim in `apmLockfile` so that
+# `harness reproduce` can drive `apm install --frozen` without
+# depending on the project's git state. format.md §6.1.
+# ─────────────────────────────────────────────────────────────────────────────
+
+APM_LOCKFILE_README = """\
+# solo-with-apm-lockfile — v0.4.0 reproducer fixture
+
+Exercises the optional top-level `apmLockfile` field added in v0.4.0
+(format.md §2.1, §6.1, §9.8). The single `auto` snapshot has both
+`apmLockHash` and `apmLockfile` populated; the hash is the sha-256
+of the lockfile's verbatim bytes. A v0.3.x reader preserves
+`apmLockfile` as an unknown field per §9.2; a v0.4.0 reader uses it
+to drive `harness reproduce`.
+
+| Field | Source |
+|---|---|
+| `apmLockHash` | sha-256 of `apm.lock.yaml` bytes (existing v0.3 field) |
+| `apmLockfile` | verbatim text of `apm.lock.yaml` (new v0.4 field) |
+
+The fixture's `apm.lock.yaml` resolves a local file:// repo
+(`./apm-source-fixture/`) so the reproducer can verify end-to-end
+without network. The repo isn't checked in here as a real git tree —
+it's a documentation hint that a real-world reproduction setup uses
+local sources for tests. End-to-end test fixtures with real APM-
+managed git repos live under `packages/core/test/fixtures/`.
+"""
+
+APM_LOCKFILE_SOLO = """\
+# apm.lock.yaml — illustrative; pinned to a single local-source package.
+lockfile_version: 1
+packages:
+  - package: harness/test-fixture-skills
+    repo_url: https://example.invalid/harness/test-fixture-skills
+    resolved_commit: 1234567890abcdef1234567890abcdef12345678
+    depth: 1
+    deployed_files:
+      - .claude/skills/test-fixture/SKILL.md
+"""
+
+
+def build_solo_with_apm_lockfile():
+    proj = EXAMPLES / "solo-with-apm-lockfile"
+    h = proj / ".harness"
+    if h.exists():
+        shutil.rmtree(h)
+    (h / "snapshots").mkdir(parents=True)
+    (h / "refs" / "heads").mkdir(parents=True)
+
+    write_text(proj / "apm.lock.yaml", APM_LOCKFILE_SOLO)
+    lock_hash = _sha256_str(APM_LOCKFILE_SOLO)
+
+    modules = [
+        m_apm("skill", "test-fixture",
+              "harness/test-fixture-skills",
+              "1234567890abcdef1234567890abcdef12345678",
+              depth=1),
+        m_builtin("mcp", "Read"),
+    ]
+
+    s_init = {
+        "formatVersion": "0.4",
+        "parentIds": [],
+        "branch": "main",
+        "kind": "init",
+        "codePin": None,
+        "createdAt": "2026-05-04T12:00:00.000Z",
+        "apmLockHash": lock_hash,
+        "apmLockfile": APM_LOCKFILE_SOLO,
+        "modules": modules,
+    }
+    id_init = write_snapshot(h, s_init)
+
+    write_text(h / "HEAD", "ref: refs/heads/main\n")
+    write_text(h / "refs" / "heads" / "main", id_init + "\n")
+    write_text(h / "config", CONFIG_DEFAULT)
+    write_text(proj / "READER-COMPAT.md", APM_LOCKFILE_README)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # The canonical-id test vector (used in spec/format.md §3)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -752,5 +834,6 @@ if __name__ == "__main__":
     build_team_shared()
     build_compat_fixtures()
     build_compat_session_ctx()
+    build_solo_with_apm_lockfile()
     print("Built example harness directories under spec/examples/.")
     emit_test_vector_summary()

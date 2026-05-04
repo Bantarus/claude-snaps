@@ -25,15 +25,16 @@ SQL_002 = os.path.join(ROOT, "spec", "schema", "002_v0_2_decoupling.sql")
 SQL_003 = os.path.join(ROOT, "spec", "schema", "003_session_observation_cache.sql")
 SQL_004 = os.path.join(ROOT, "spec", "schema", "004_v0_3_notes.sql")
 SQL_005 = os.path.join(ROOT, "spec", "schema", "005_drop_tag_kind.sql")
+SQL_006 = os.path.join(ROOT, "spec", "schema", "006_apm_lockfile.sql")
 JSCH = os.path.join(ROOT, "spec", "schema", "snapshot.schema.json")
 
 
 def _setup_sql():
-    """Apply 001 → 002 → 003 → 004 → 005 to a fresh in-memory DB.
-    Tests run against the post-migration v5 schema — the actual shape
-    v0.3.1 clients will see."""
+    """Apply 001 → 002 → 003 → 004 → 005 → 006 to a fresh in-memory DB.
+    Tests run against the post-migration v6 schema — the actual shape
+    v0.4.0 clients will see."""
     conn = sqlite3.connect(":memory:")
-    for path in (SQL_001, SQL_002, SQL_003, SQL_004, SQL_005):
+    for path in (SQL_001, SQL_002, SQL_003, SQL_004, SQL_005, SQL_006):
         with open(path) as f:
             conn.executescript(f.read())
     conn.execute(
@@ -77,7 +78,7 @@ def _schema_accepts(v, kind):
     blob = {
         "id": "a" * 40, "parentIds": [], "branch": "main", "kind": "init",
         "codePin": None, "createdAt": "2026-01-01T00:00:00.000Z",
-        "apmLockHash": None,
+        "apmLockHash": None, "apmLockfile": None,
         "modules": [{"type": "mcp", "name": "n", "enabled": True, "source": src}],
     }
     from jsonschema import Draft202012Validator
@@ -143,7 +144,7 @@ def _check_snapshot_kind_agreement(conn, validator) -> tuple[int, int]:
             "id": "a" * 40, "parentIds": [] if kind_val == "init" else ["b" * 40],
             "branch": "main", "kind": kind_val,
             "codePin": None, "createdAt": "2026-01-01T00:00:00.000Z",
-            "apmLockHash": None, "modules": [],
+            "apmLockHash": None, "apmLockfile": None, "modules": [],
         }
         json_ok = len(list(validator.iter_errors(blob))) == 0
         ok = (sql_ok == json_ok == expected)
@@ -233,7 +234,7 @@ def main() -> int:
 
     print(f"\nTotal: {pass_total} passed, {fail_total} failed.")
     if rc == 0:
-        print("All cases agree across SQL CHECK and JSON Schema (post-005 v0.3.1 schema).")
+        print("All cases agree across SQL CHECK and JSON Schema (post-006 v0.4.0 schema).")
     else:
         print("AGREEMENT FAILURE — SQL CHECK and JSON Schema have drifted.")
     return rc

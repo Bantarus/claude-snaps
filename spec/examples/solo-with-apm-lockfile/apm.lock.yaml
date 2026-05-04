@@ -1,0 +1,9 @@
+# apm.lock.yaml — illustrative; pinned to a single local-source package.
+lockfile_version: 1
+packages:
+  - package: harness/test-fixture-skills
+    repo_url: https://example.invalid/harness/test-fixture-skills
+    resolved_commit: 1234567890abcdef1234567890abcdef12345678
+    depth: 1
+    deployed_files:
+      - .claude/skills/test-fixture/SKILL.md

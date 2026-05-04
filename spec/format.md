@@ -1,6 +1,6 @@
 # `.harness/` — Agent harness lineage format
 
-> **Status:** Working Draft v0.3.1 — unstable, may change without notice until v1.0.
+> **Status:** Working Draft v0.4.0 — unstable, may change without notice until v1.0.
 > **Editors:** the harness-snaps authors.
 > **Format:** Markdown, JSON Schema 2020-12, SQLite schema (SQL DDL).
 > **Conformance terminology:** [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119) (MUST / SHOULD / MAY).
@@ -143,6 +143,7 @@ Optional top-level fields:
 | `model` | string \| `null` | Model id reported by the host on SessionStart / UserPromptSubmit (e.g. `"claude-opus-4-7"`). Optional; pre-amendment snapshots and non-hook writers omit it. Pass-through; not normalized. |
 | `permissionMode` | string \| `null` | Permission mode reported by the host on SessionStart / UserPromptSubmit (e.g. `"default"`, `"plan"`, `"acceptEdits"`). Optional; pre-amendment snapshots and non-hook writers omit it. Pass-through; not normalized. |
 | `apmLockHash` | string \| `null` | `sha256:<64-hex>` of `apm.lock.yaml` bytes; see [apm-integration.md](apm-integration.md). |
+| `apmLockfile` | string \| `null` | Full text content of `apm.lock.yaml` at capture time. Null when no lockfile. Captured to enable self-contained reproduction (§6.1) without requiring the user's project to be at the snapshot's `codePin`. Added v0.4.0. |
 | `author` | string \| `null` | Free-form (e.g. email or username). |
 
 `model` and `permissionMode` are session-level context shipped in the
@@ -164,6 +165,17 @@ diff summary in `harness log`) are computed from `(parentIds[0],
 modules)` at read time, never stored. The format stays small; UX
 surfaces evolve independently. There is no automated migration from
 v0.2.x — see §9.6.
+
+**Added in v0.4.0:** `apmLockfile`. Carries the verbatim text of
+`apm.lock.yaml` at capture time so the reproducer (§6.1) can run
+`apm install --frozen` against the recorded lockfile without depending
+on the project's git state. The pre-existing `apmLockHash` is retained
+as the cheap equality probe used by composition-change detection
+(§2.7) — when both fields are set, `apmLockHash` MUST equal
+`sha256:` + sha-256 of `apmLockfile` bytes. Both participate in
+canonical bytes (§3.1); a snapshot with a different `apmLockfile`
+content is a different snapshot. v0.3.x snapshots are read-compatible
+with `apmLockfile` absent (treated as `null`).
 
 **Removed in v0.3.1:** `version` and the `tag` value of `kind`.
 Snapshots represent composition observations, period; promotion
@@ -492,6 +504,12 @@ All other fields participate in canonical bytes derivation, including:
   the same `modules` array but different `apmLockHash` mean a module's
   resolved commit changed under the same path. Deduping them would be
   wrong.
+- `apmLockfile` — structural for the same reason as `apmLockHash`,
+  and additionally because the reproducer (§6.1) reconstructs APM-source
+  modules from this exact byte content. A snapshot whose `apmLockfile`
+  differed from another's would resolve to a different APM dependency
+  set on reproduction; treating them as the same snapshot would be a
+  reproducibility bug.
 - `formatVersion`, `author` — additive metadata; preserved on
   round-trip per §9.2 and participate in identity.
 
@@ -891,9 +909,86 @@ requirements load-bearing for this document:
 - The lockfile bytes MUST be hashed and stored at the top level of the
   snapshot blob as `apmLockHash` (§2.3).
 - `kind: "apm"` modules are reproducible via APM tooling, not by extracting
-  files from the snapshot. `kind: "local"` modules in v0.3 record only the
-  path; reproduction is best-effort. (Storing local-source content is a
-  v0.4 candidate — §9.4.)
+  files from the snapshot. `kind: "local"` modules record only the path;
+  the reproducer (§6.1) reports them and does not materialize their
+  content. (Storing local-source content is deferred — §9.4.)
+
+### 6.1 Reproducer contract (v0.4.0)
+
+The `harness reproduce <ref>` command materializes a snapshot's
+harness composition into the working `.claude/` directory.
+Reproduction is **APM-driven**: APM is a hard prerequisite for
+reproducer content. Projects without an `apm.lock.yaml` at capture
+time produce snapshots whose reproducer is a no-op for content
+(builtins are still verified, local-source modules are still reported).
+
+**Materialized:**
+
+- **APM-managed modules** (`source.kind = "apm"`). The reproducer writes
+  the snapshot's recorded `apmLockfile` content into the project's
+  `apm.lock.yaml` (backing up any existing file as
+  `apm.lock.yaml.harness-backup`) and invokes APM in lockfile-honoring
+  install mode. With APM 0.8.x this is `apm install --force` —
+  `apm install` without `--update` already reuses locked commits, and
+  `--force` is needed because the reproducer typically overwrites a
+  drifted `.claude/`. After install, the reproducer recomputes
+  `configHash` for each APM-source module against the deployed file at
+  its `deployed_files`-mapped path and verifies equality with the
+  value recorded on the module.
+- **Builtin modules** (`source.kind = "builtin"`). The reproducer
+  verifies that each is present in the host's known-builtin set. No
+  filesystem write — builtins are runtime-defined.
+
+**Reported but not materialized:**
+
+- **Local-source modules** (`source.kind = "local"`). The reproducer
+  prints the list of local-source modules with their recorded
+  `configHash` and source path. The contract is honest: v0.4.0
+  snapshots do not store local-source content; the reproducer cannot
+  recreate it. Users who want full reproducibility on a local module
+  promote it to APM. Storing local-source content (option (d) in
+  prompt v0.4.0's pre-thoughts) is a deferred decision; see §9.4.
+
+**Side effects:**
+
+- `.claude/` is backed up to `.claude.harness-backup-<ISO timestamp>/`
+  before any write. The backup is unconditional (no `--no-backup`
+  flag) and not auto-deleted. Manual restoration is `mv` of the backup
+  back over `.claude/`. The backup path is printed on every invocation,
+  including dry-run.
+- `apm install --frozen` writes APM-managed files into `.claude/`
+  (subject to APM's own deployment rules).
+- `.harness/HEAD` advances to the reproduced snapshot id on success
+  (whether the snapshot is a branch tip or a detached id). The
+  reproducer does not rewrite branch refs.
+
+**Failure modes:**
+
+| Failure | Behavior |
+|---|---|
+| Snapshot's `apmLockfile` is null (no APM at capture, or v0.3.x snapshot) | Reproducer skips the APM phase; verifies builtins; reports local-source; advances HEAD. Prints a notice that APM-driven reproduction was skipped (no APM lockfile recorded). |
+| `apm install` exits non-zero (network failure, missing package, version conflict, deleted upstream commit) | Reproducer aborts BEFORE advancing HEAD. Backup retained. APM stderr surfaced with the backup path. |
+| APM module verification fails (installed but `configHash` mismatch) | Reproducer aborts BEFORE advancing HEAD. Backup retained. The mismatched modules are listed with expected vs. actual `configHash`. |
+| Builtin missing from host (rare; e.g. snapshot taken on a host with extra builtins) | Reported but does not abort — builtins are advisory metadata, not load-bearing for reproduction. |
+| `apm` binary not found on PATH | Reproducer aborts BEFORE backup. Clear error: `harness: apm not found on PATH; install APM (https://github.com/microsoft/apm) to use harness reproduce`. |
+
+**`codePin` handling:** The reproducer does NOT check or modify the
+user's project git state. `codePin` is preserved on the snapshot as
+alignment metadata; users who want to align project git state to a
+snapshot's `codePin` do so via `git checkout <codePin>` independently.
+
+**Atomicity boundary:** If the APM phase fails partway, the user's
+`.claude/` may be in a partial state (some modules deployed, some
+not). The reproducer does not auto-restore — the backup is the
+recovery mechanism. This is deliberate: a partially-deployed install
+is not necessarily wrong (the user may want to inspect it), and an
+auto-rollback would itself need a recovery path.
+
+**Dry-run:** `harness reproduce <ref> --dry-run` performs all reads
+(loading the snapshot, parsing the lockfile, listing planned actions)
+without side effects. `.claude/`, `apm.lock.yaml`, HEAD, and APM's
+`apm_modules/` are unchanged. The dry-run output describes what
+would happen.
 
 ## 7. The `config` file
 
@@ -958,8 +1053,8 @@ observed_at, event_kind)` and atomically update `lineage.sqlite`.
 
 ### 9.1 Spec versioning
 
-This document is `0.3.1`. Snapshot blobs MAY include `formatVersion`. If
-absent, treat as `"0.3"` (the MAJOR.MINOR family).
+This document is `0.4.0`. Snapshot blobs MAY include `formatVersion`. If
+absent, treat as `"0.4"` (the MAJOR.MINOR family).
 
 | Reader sees | Reader behavior |
 |---|---|
@@ -982,6 +1077,14 @@ kind) and §4.2 (tags as lightweight refs); no external consumer ever
 held v0.3.0 data, and v0.3.1 resolves the inconsistency toward §4.2.
 See §9.7 for the full transition narrative and the SQL/blob
 considerations.
+
+The 0.3.1 → 0.4.0 transition is a **minor bump**: one new optional
+top-level field (`apmLockfile`) and the new reproducer contract (§6.1).
+v0.3.x readers preserve the unknown field per §9.2 and continue to
+function. v0.4.0 readers handle the field's absence by treating it as
+null, which makes pre-v0.4.0 snapshots reproducer-compatible (the
+reproducer reports them as "no APM lockfile recorded" and skips the
+APM phase). See §9.8 for the full transition narrative.
 
 ### 9.2 Forward-compat: unknown fields and variants
 
@@ -1052,12 +1155,13 @@ Non-normative; recorded for orientation only.
   Each gains a corresponding attribution `eventKind` per §2.7.
 - Storing local-source module file content inside the snapshot blob
   (or as side-blobs) so `kind: "local"` reproduction is byte-exact.
+  v0.4.0's reproducer (§6.1) reports local-source modules without
+  materializing them; full local-source materialization is deferred
+  to a future minor or major bump (the choice depends on whether
+  storing content can be made additive-optional).
 - A reflog (history of ref movements). If "annotated tags" enter the
   design conversation, they would land as a separate artifact alongside
   refs, NOT as a snapshot kind (per the §2.2 / §4.2 commitment).
-- The `harness reproduce` / `harness checkout --apply` reproducer that
-  materializes a snapshot's modules into the working tree (long-deferred
-  prompt D from the v0.1 plan).
 - Multi-machine sync semantics (push/pull, conflict resolution beyond
   ref fast-forward).
 - User-level capture (`~/.claude/`) gated on the team-sync semantics
@@ -1197,3 +1301,49 @@ The example fixtures under `spec/examples/` are regenerated by the
 v0.3.1 `build_examples.py` without tag-kind snapshots. Each fixture's
 underlying composition is reachable from the `refs/tags/<name>` ref
 directly.
+
+### 9.8 v0.3.1 → v0.4.0: `apmLockfile` and the reproducer
+
+v0.4.0 adds one optional top-level field (`apmLockfile`, §2.1) and
+introduces the reproducer contract (§6.1). The format change itself
+is small; what matters is that v0.4.0 captures enough state in the
+blob for `harness reproduce` to drive APM's lockfile-honoring install
+deterministically without depending on the project's git state at
+reproduction time.
+
+**Why this is a minor bump (per §9.3):**
+
+- The new field is **optional**. v0.3.x readers per §9.2 preserve the
+  field on round-trip and ignore its semantics. They continue to function.
+- No existing field changed type, name, or required status.
+- No enum value was added or removed.
+- The canonical-bytes derivation rule (§3.1) is unchanged in shape
+  — `apmLockfile` joins the existing list of participating fields,
+  consistent with the doctrine that composition-defining fields
+  participate.
+
+**The schema migration (`spec/schema/006_apm_lockfile.sql`):**
+
+1. Adds `apm_lockfile TEXT` column to `snapshots` (nullable).
+2. Bumps `_schema.version` to 6.
+
+No data migration is needed for existing v0.3.x rows — they remain
+valid with `apm_lockfile = NULL`. A v0.4.0 reader loads them
+unchanged; the reproducer treats null as "no APM lockfile recorded"
+and skips the APM phase.
+
+**Reading v0.3.x snapshots in v0.4.0:** Fully compatible. The
+reproducer reports such snapshots as "no APM lockfile recorded" and
+proceeds with builtins-only verification + local-source reporting. No
+reader-side migration is needed.
+
+**Reading v0.4.0 snapshots in v0.3.x:** Per §9.2, v0.3.x readers
+preserve `apmLockfile` as an unknown top-level field on round-trip.
+They cannot reproduce, but they can render lineage and diffs.
+
+**Test vector continuity:** `spec/test-vectors/canonical-501.bin` is
+unchanged in v0.4.0. The vector's input snapshot does not carry
+`apmLockfile` (the field is optional and absent), and v0.4.0 byte
+production for an absent field is identical to v0.3.1 byte production.
+A new fixture exercising the present-and-populated case lives at
+`spec/examples/solo-with-apm-lockfile/` (added in v0.4.0).
