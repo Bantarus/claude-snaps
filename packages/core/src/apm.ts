@@ -1,8 +1,9 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import { ParseError } from './errors.js';
+import { IoError, ParseError } from './errors.js';
 
 // Tolerant reader: extract ONLY the five fields per spec/apm-integration.md.
 // Unknown fields are dropped. Field-key tolerance accommodates upstream
@@ -112,6 +113,125 @@ export function apmLockHash(
   if (!existsSync(path)) return null;
   const bytes = readFileSync(path);
   return 'sha256:' + createHash('sha256').update(bytes).digest('hex');
+}
+
+/**
+ * Read the verbatim text of `<projectRoot>/apm.lock.yaml`. Returns
+ * `null` if the file is absent. Used by capture (v0.4.0) to embed the
+ * lockfile content into the snapshot blob so `harness reproduce` is
+ * self-contained against the project's git state.
+ *
+ * Reads as UTF-8. The bytes are stored verbatim — no normalization,
+ * no reformatting. `apmLockHash()` over the same path MUST produce
+ * `sha256:` + sha-256 of these bytes (the invariant readers rely on
+ * to detect tampering between capture and reproduce).
+ */
+export function readApmLockfileContent(
+  projectRoot: string,
+  filename: string = DEFAULT_LOCKFILE,
+): string | null {
+  const path = join(projectRoot, filename);
+  if (!existsSync(path)) return null;
+  try {
+    return readFileSync(path, 'utf-8');
+  } catch (cause) {
+    throw new IoError(`failed to read ${path}`, cause);
+  }
+}
+
+/**
+ * Write `<projectRoot>/apm.lock.yaml` with the supplied content. If a
+ * lockfile already exists, it is moved aside to
+ * `apm.lock.yaml.harness-backup` (overwriting any prior backup) before
+ * the new content lands. The backup is intentional: a user who runs
+ * `harness reproduce` while holding uncommitted lockfile changes can
+ * recover by `mv`-ing the backup back.
+ *
+ * Used by `harness reproduce` (v0.4.0) to materialize the snapshot's
+ * recorded `apmLockfile` before invoking `apm install --frozen`.
+ *
+ * @throws {IoError} on filesystem failure.
+ */
+export function writeApmLockfile(
+  projectRoot: string,
+  content: string,
+  filename: string = DEFAULT_LOCKFILE,
+): void {
+  const path = join(projectRoot, filename);
+  if (existsSync(path)) {
+    const backupPath = `${path}.harness-backup`;
+    try {
+      copyFileSync(path, backupPath);
+    } catch (cause) {
+      throw new IoError(`failed to back up ${path} to ${backupPath}`, cause);
+    }
+  }
+  try {
+    writeFileSync(path, content, 'utf-8');
+  } catch (cause) {
+    throw new IoError(`failed to write ${path}`, cause);
+  }
+}
+
+/**
+ * Run `apm install --force` in `projectRoot`. Returns a structured
+ * result. Captures stdout and stderr.
+ *
+ * Why `--force` and not `--frozen`: APM's default `apm install` already
+ * honors the existing `apm.lock.yaml` (locked-commits-reused per the
+ * APM CLI lifecycle table). The CLI's `--update` flag is the opt-in
+ * for re-resolving; absence of `--update` IS the frozen behavior. The
+ * additional `--force` is necessary because the reproducer typically
+ * runs against a `.claude/` whose contents have drifted from the
+ * captured composition (the user is reproducing precisely because
+ * they want to overwrite that drift); without `--force`, APM refuses
+ * to overwrite locally-authored files. APM 0.8.x has no literal
+ * `--frozen` flag.
+ *
+ * Failure modes surfaced via `success: false`:
+ *  - `apm` not on PATH (ENOENT — surfaced with a hint pointing at the
+ *    APM repo).
+ *  - `apm install --force` exits non-zero (network failure, deleted
+ *    upstream commit, version conflict).
+ *
+ * Used by `harness reproduce` (spec/format.md §6.1).
+ */
+export function runApmInstallLocked(
+  projectRoot: string,
+): { success: true; stdout: string } | { success: false; stderr: string; exitCode: number | null; reason: 'not-on-path' | 'install-failed' } {
+  const result = spawnSync('apm', ['install', '--force'], {
+    cwd: projectRoot,
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (result.error !== undefined) {
+    const code = (result.error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      return {
+        success: false,
+        stderr:
+          'harness: apm not found on PATH; install APM (https://github.com/microsoft/apm) to use harness reproduce',
+        exitCode: null,
+        reason: 'not-on-path',
+      };
+    }
+    return {
+      success: false,
+      stderr: `apm install failed to spawn: ${result.error.message}`,
+      exitCode: null,
+      reason: 'install-failed',
+    };
+  }
+  if (result.status !== 0) {
+    const stderr = (result.stderr ?? '') + (result.stdout ?? '');
+    return {
+      success: false,
+      stderr: stderr.length === 0 ? `apm install --force exited ${result.status}` : stderr,
+      exitCode: result.status,
+      reason: 'install-failed',
+    };
+  }
+  return { success: true, stdout: result.stdout ?? '' };
 }
 
 // ── private ────────────────────────────────────────────────────────────────

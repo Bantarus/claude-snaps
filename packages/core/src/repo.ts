@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { apmLockHash as apmLockHashOf } from './apm.js';
+import { apmLockHash as apmLockHashOf, readApmLockfileContent } from './apm.js';
 import { canonicalize } from './canonical.js';
 import {
   ancestorsOf,
@@ -14,8 +14,10 @@ import { captureCurrentState } from './capture.js';
 import { EmptyRepositoryError, IntegrityError, InvalidStateError, IoError } from './errors.js';
 import { IndexDb, type ListSnapshotsFilter, type ReindexResult } from './index_db.js';
 import { listRefs, readHead, readRef, resolveHead, writeRef } from './refs.js';
+import { reproduceSnapshot } from './reproduce.js';
 import type {
-  Attribution, AttributionEventKind, DiffOp, HeadState, Module, Snapshot,
+  Attribution, AttributionEventKind, DiffOp, HeadState, Module,
+  ReproduceOptions, ReproduceResult, Snapshot,
 } from './types.js';
 
 const DEFAULT_BRANCH = 'main';
@@ -347,6 +349,7 @@ export class Repo {
     const headId = this.resolveHead();
     const modules = this.workingTree();
     const apmLockHash = this.apmLockHash();
+    const apmLockfile = this.apmLockfileContent();
 
     // No-change path: head exists and the live composition matches the
     // head snapshot. Append attribution only; do NOT advance the
@@ -373,12 +376,13 @@ export class Repo {
 
     // Change path: write a new snapshot, advance branch ref, attribute.
     const baseBlob: Omit<Snapshot, 'id'> = {
-      formatVersion: '0.3',
+      formatVersion: '0.4',
       parentIds: headId === null ? [] : [headId],
       branch: branchName,
       kind: headId === null ? 'init' : 'auto',
       codePin: this.gitSha(),
       apmLockHash,
+      apmLockfile,
       createdAt: observedAt,
       modules,
     };
@@ -480,6 +484,46 @@ export class Repo {
   /** sha256 of the apm.lock.yaml at the project root, prefixed `sha256:`, or null. */
   apmLockHash(): string | null {
     return apmLockHashOf(this.projectRoot);
+  }
+
+  /**
+   * Verbatim text content of `<projectRoot>/apm.lock.yaml`, or null if
+   * absent. Used by capture (v0.4.0) to embed the lockfile in the
+   * snapshot blob.
+   */
+  apmLockfileContent(): string | null {
+    return readApmLockfileContent(this.projectRoot);
+  }
+
+  // ── reproducer (v0.4.0; spec/format.md §6.1) ───────────────────────────
+
+  /**
+   * Materialize a snapshot's harness composition into the working
+   * `.claude/` directory. APM-driven: APM is a hard prerequisite for
+   * content. Reports local-source modules without materializing them;
+   * verifies builtins against the host's known set without writing.
+   *
+   * Side effects (when not in dry-run):
+   *   1. Backs up `.claude/` to `.claude.harness-backup-<ISO timestamp>/`.
+   *   2. Writes the snapshot's recorded `apmLockfile` to
+   *      `apm.lock.yaml` (existing lockfile moved to
+   *      `apm.lock.yaml.harness-backup`).
+   *   3. Runs `apm install --frozen` and verifies post-install
+   *      configHashes against the snapshot's recorded values.
+   *   4. Advances HEAD (detached) to the snapshot id on success.
+   *
+   * On any APM-phase failure (install error or configHash mismatch),
+   * HEAD is NOT advanced and the backup is retained.
+   */
+  reproduce(snapshotId: string, options?: ReproduceOptions): ReproduceResult {
+    const snap = this.snapshot(snapshotId);
+    return reproduceSnapshot({
+      projectRoot: this.projectRoot,
+      harnessDir: this.harnessDir,
+      snapshotId,
+      snapshot: snap,
+      ...(options !== undefined ? { options } : {}),
+    });
   }
 
   // ── index ────────────────────────────────────────────────────────────

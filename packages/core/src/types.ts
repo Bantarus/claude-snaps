@@ -38,6 +38,12 @@ export interface Snapshot {
   kind: SnapshotKind;
   codePin: string | null;
   apmLockHash: string | null;
+  // Verbatim text of `apm.lock.yaml` at capture time. Optional; absent
+  // on v0.3.x snapshots and on projects without APM. When present,
+  // `apmLockHash` MUST equal `sha256:` + sha-256 of these bytes. Added
+  // v0.4.0 to make `harness reproduce` self-contained against the
+  // project's git state. Participates in canonical bytes (format.md §3.1).
+  apmLockfile?: string | null;
   createdAt: string;
   author?: string;
   formatVersion?: string;
@@ -47,6 +53,40 @@ export interface Snapshot {
   model?: string;
   permissionMode?: string;
   modules: Module[];
+}
+
+// ── Reproducer (v0.4.0; spec/format.md §6.1) ────────────────────────────
+
+export interface ReproduceOptions {
+  dryRun?: boolean;
+}
+
+export type ReproducePhase = 'skipped' | 'success' | 'failed';
+
+export interface ReproduceResult {
+  snapshotId: string;
+  /** Where `.claude/` was (or would be) backed up. Always populated, even on dry-run. */
+  backupPath: string;
+  /** True if dryRun was set; no side effects were performed. */
+  dryRun: boolean;
+  /** APM phase outcome. 'skipped' when the snapshot has no apmLockfile. */
+  apmPhase: ReproducePhase;
+  /** Count of APM modules in the snapshot (depth-1 + transitive). */
+  apmModulesExpected: number;
+  /** Count of APM modules whose post-install configHash matched the snapshot's recorded value. */
+  apmModulesVerified: number;
+  /** Per-module verification failures (configHash mismatch or file missing). Empty on success. */
+  apmFailures: Array<{ name: string; type: string; reason: string }>;
+  /** Captured stderr from `apm install --frozen` when apmPhase=failed. */
+  apmStderr?: string;
+  /** Builtins observed in the snapshot. Verified against the host's known builtin set. */
+  builtinsExpected: number;
+  /** Builtins missing from the host (rare; advisory only — does not abort). */
+  builtinsMissing: Array<{ name: string; type: string }>;
+  /** Local-source modules reported but not materialized (per the §6.1 contract). */
+  localSourceReported: Array<{ name: string; type: string; path: string; configHash?: string }>;
+  /** True when HEAD was advanced to snapshotId at the end of a successful reproduction. */
+  headAdvanced: boolean;
 }
 
 // Attribution event — a session's observation of a snapshot at an

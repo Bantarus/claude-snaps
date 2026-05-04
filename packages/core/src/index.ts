@@ -15,6 +15,9 @@ export type {
   AttributionEventKind,
   DiffOp,
   HeadState,
+  ReproduceOptions,
+  ReproducePhase,
+  ReproduceResult,
 } from './types.js';
 
 export {

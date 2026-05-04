@@ -11,24 +11,24 @@ import type { Attribution, AttributionEventKind, Snapshot, SnapshotKind } from '
 // runtime; we do NOT inline it as a TS string. Inlining would create
 // two sources of truth that drift.
 
-// On open we apply 001 → 002 → 003 → 004 → 005 in order so the
-// runtime schema is always v5: snapshots without session_id and
-// without message, kind CHECK init|auto (no tag — see format.md
-// §4.2; tags are lightweight refs only), no version column,
-// attributions table with note_text + invariant + new event_kind
-// enum, session_observation_cache table for the hook's hot-path.
-// Each migration is idempotent through the version-gate in
-// ensureSchema().
+// On open we apply 001 → 002 → 003 → 004 → 005 → 006 in order so the
+// runtime schema is always v6: schema v5 plus the v0.4.0 apm_lockfile
+// column on snapshots (TEXT, nullable). The column mirrors the new
+// optional top-level `apmLockfile` field in the JSON blob — verbatim
+// `apm.lock.yaml` text captured to make `harness reproduce`
+// self-contained against the project's git state. Each migration is
+// idempotent through the version-gate in ensureSchema().
 const SCHEMA_FILES: Array<{ from: number; file: string; to: number }> = [
   { from: 0, file: '001_init.sql',                       to: 1 },
   { from: 1, file: '002_v0_2_decoupling.sql',            to: 2 },
   { from: 2, file: '003_session_observation_cache.sql',  to: 3 },
   { from: 3, file: '004_v0_3_notes.sql',                 to: 4 },
   { from: 4, file: '005_drop_tag_kind.sql',              to: 5 },
+  { from: 5, file: '006_apm_lockfile.sql',               to: 6 },
 ];
-const CURRENT_SCHEMA_VERSION = 5;
-const HARNESS_FORMAT_VERSION = '0.3';
-const WRITER_NAME = '@harness/core@0.3.1';
+const CURRENT_SCHEMA_VERSION = 6;
+const HARNESS_FORMAT_VERSION = '0.4';
+const WRITER_NAME = '@harness/core@0.4.0';
 
 // node:sqlite emits an ExperimentalWarning on first DatabaseSync() call in
 // Node 22-24. Suppress only that specific warning so we don't pollute
@@ -102,14 +102,14 @@ export class IndexDb {
     this.db
       .prepare(
         `INSERT INTO snapshots
-           (id, branch, kind, code_pin, apm_lock_hash,
+           (id, branch, kind, code_pin, apm_lock_hash, apm_lockfile,
             author, created_at, format_version,
             model, permission_mode)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         snap.id, snap.branch, snap.kind,
-        snap.codePin, snap.apmLockHash,
+        snap.codePin, snap.apmLockHash, snap.apmLockfile ?? null,
         snap.author ?? null, snap.createdAt,
         snap.formatVersion ?? HARNESS_FORMAT_VERSION,
         snap.model ?? null, snap.permissionMode ?? null,
@@ -386,6 +386,7 @@ export class IndexDb {
     if (row.author !== null) out.author = row.author;
     if (row.model !== null) out.model = row.model;
     if (row.permission_mode !== null) out.permissionMode = row.permission_mode;
+    if (row.apm_lockfile !== null) out.apmLockfile = row.apm_lockfile;
     return out;
   }
 
@@ -509,6 +510,7 @@ interface SnapshotRow {
   kind: SnapshotKind;
   code_pin: string | null;
   apm_lock_hash: string | null;
+  apm_lockfile: string | null;
   author: string | null;
   created_at: string;
   format_version: string;
