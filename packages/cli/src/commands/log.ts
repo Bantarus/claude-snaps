@@ -32,6 +32,16 @@ export async function cmdLog(parsed: ParsedArgs): Promise<number> {
     const withSessions = parsed.flags['with-sessions'] === true;
 
     const snaps = repo.log(filter);
+    // HEAD pointer for inline row annotation (v0.4.1 cosmetic).
+    // Annotates the row that current HEAD resolves to, with `(HEAD)`
+    // if HEAD is symbolic or `(HEAD, detached)` if detached. This
+    // mirrors git's `(HEAD -> main)` convention without breaking the
+    // line shape downstream consumers parse — non-HEAD rows are
+    // unchanged.
+    const headState = repo.head();
+    const headId = repo.resolveHead();
+    const headIsDetached = headState !== null && headState.type === 'detached';
+
     // Build a snapshot-id → tag-name map once so we can annotate
     // tagged rows. v0.3.1 tags are lightweight refs (format.md §4.2);
     // multiple tag names MAY point at the same snapshot (rare but
@@ -52,6 +62,9 @@ export async function cmdLog(parsed: ParsedArgs): Promise<number> {
       const tagAnnotation = tagNames.length > 0
         ? ' ' + tagNames.map((t) => c.inverseYellow(` ${t} `)).join(' ')
         : '';
+      const headAnnotation = s.id === headId
+        ? ' ' + c.bold(headIsDetached ? '(HEAD, detached)' : '(HEAD)')
+        : '';
       const code = s.codePin !== null ? ' ' + c.dim(`code:${s.codePin.slice(0, 7)}`) : '';
 
       // Compute the per-row diff summary at read time. For root
@@ -66,7 +79,7 @@ export async function cmdLog(parsed: ParsedArgs): Promise<number> {
       const summary = summarizeDiff(parentBlob === null ? null : parentBlob.modules, s.modules);
       const summaryDisplay = s.kind === 'init' ? '' : `${summary} `;
 
-      let line = `${idShort} ${kindGlyph} ${summaryDisplay} ${branch}${tagAnnotation}${code}`;
+      let line = `${idShort} ${kindGlyph} ${summaryDisplay} ${branch}${tagAnnotation}${headAnnotation}${code}`;
       if (withSessions) {
         const sessions = repo.sessionsAt(s.id);
         const count = sessions.length;
