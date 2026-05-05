@@ -136,35 +136,47 @@ if [ -n "$FIRST" ] && [ -n "$LAST" ] && [ "$FIRST" != "$LAST" ]; then
 fi
 printf '\n'
 
-printf '6) Hook firings — JSONL trail (NOTE: v0.1-shape signal only)\n----------------\n'
-# IMPORTANT (v0.2 soak finding, rolled forward to v0.3): this counter
-# matches Claude Code's `attachment.hookEvent` JSONL entries, which
-# are emitted only on SessionStart attachments. UserPromptSubmit
-# fires DO NOT show up here (they take a different shape in the
-# transcript). For a full firing count use section 4b's attributions
-# table summary, which is the authoritative ledger.
+printf '6) JSONL cross-check — SessionStart attachments + user prompts\n----------------\n'
+# Cross-validation against the JSONL transcript. Section 4b is the
+# AUTHORITATIVE ledger (attributions table); this section is a sanity
+# check for soak-time observations.
+#
+# Two counters per session, both proxies (not authoritative):
+#   - SessionStart attachments  : `attachment.hookEvent == "SessionStart"`
+#                                 — fires once per attached SessionStart.
+#                                 Claude Code does NOT emit a per-fire
+#                                 marker for UserPromptSubmit, so we
+#                                 cannot count those directly.
+#   - User-message lines        : `type == "user"` lines in the JSONL,
+#                                 a proxy for UserPromptSubmit fires
+#                                 (each user prompt is one such line).
+# Discrepancy with section 4b is expected and informative — e.g.
+# `compact` SessionStarts may not produce JSONL attachments depending
+# on host version. Treat divergence as data, not bug.
 JSONL_DIR="$HOME/.claude/projects/$(pwd | tr / -)"
 if [ -d "$JSONL_DIR" ]; then
   printf '  jsonl dir: %s\n' "$JSONL_DIR"
   for f in "$JSONL_DIR"/*.jsonl; do
     [ -f "$f" ] || continue
-    n=$(python3 -c "
+    counts=$(python3 -c "
 import json, sys
-c = 0
+ss = 0; up = 0
 for line in open(sys.argv[1]):
     try:
         d = json.loads(line)
         if d.get('type') == 'attachment' and d.get('attachment', {}).get('hookEvent'):
-            c += 1
+            ss += 1
+        elif d.get('type') == 'user':
+            up += 1
     except Exception: pass
-print(c)
+print(f'{ss} {up}')
 " "$f")
+    ss=$(echo "$counts" | cut -d' ' -f1)
+    up=$(echo "$counts" | cut -d' ' -f2)
     sid="$(basename "$f" .jsonl)"
-    printf '  %s  SessionStart attachments: %s\n' "${sid:0:8}" "$n"
+    printf '  %s  SessionStart attachments: %s  user-prompt lines: %s\n' "${sid:0:8}" "$ss" "$up"
   done
-  printf '\n  (zero entries here for a session does NOT mean the hook did not\n'
-  printf '   fire — UserPromptSubmit fires for that session may still appear\n'
-  printf '   in section 4b. v0.4 candidate: parse the full hook trail correctly.)\n'
+  printf '\n  Authoritative count: section 4b (attributions table).\n'
 else
   printf '  (no jsonl dir found at %s — Claude Code may not have run yet)\n' "$JSONL_DIR"
 fi

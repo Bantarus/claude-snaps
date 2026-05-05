@@ -138,6 +138,41 @@ describe('harness tag / branch / checkout', () => {
     expect(head.trim()).toBe('ref: refs/heads/experimental');
   });
 
+  test('checkout warns when working tree diverges from the checked-out snapshot (v0.4.x)', async () => {
+    const cwd = freshProject();
+    await initRepo(cwd);
+    await writeMinimalClaude(cwd);
+    await snapshotOnce(cwd, 's1');
+
+    // Mutate .claude/ so working-tree composition no longer matches the
+    // snapshot at HEAD. Adding a new skill is the cheapest way to force
+    // a different snapshot id.
+    const fs = require('node:fs') as typeof import('node:fs');
+    fs.mkdirSync(join(cwd, '.claude/skills/extra'), { recursive: true });
+    fs.writeFileSync(
+      join(cwd, '.claude/skills/extra/SKILL.md'),
+      '---\nname: extra\ndescription: post-snapshot addition\n---\n# Extra\n',
+      'utf-8',
+    );
+
+    const co = await runCli(['checkout', 'main'], { cwd });
+    expect(co.code).toBe(0);
+    expect(co.stdout).toMatch(/DIVERGED/);
+    expect(co.stdout).toMatch(/harness reproduce main/);
+  });
+
+  test('checkout reports clean match when working tree matches HEAD (v0.4.x)', async () => {
+    const cwd = freshProject();
+    await initRepo(cwd);
+    await writeMinimalClaude(cwd);
+    await snapshotOnce(cwd, 's1');
+
+    const co = await runCli(['checkout', 'main'], { cwd });
+    expect(co.code).toBe(0);
+    expect(co.stdout).toMatch(/Working tree matches/);
+    expect(co.stdout).not.toMatch(/DIVERGED/);
+  });
+
   test('checkout to a 40-hex id detaches HEAD', async () => {
     const cwd = freshProject();
     await initRepo(cwd);
