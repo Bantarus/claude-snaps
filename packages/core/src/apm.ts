@@ -1,7 +1,7 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { copyFileSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { IoError, ParseError } from './errors.js';
 
@@ -80,6 +80,36 @@ export function readApmLock(
       Array.isArray(deployedFilesRaw) && deployedFilesRaw.every((x) => typeof x === 'string')
         ? (deployedFilesRaw as string[])
         : null;
+    const sourceField = strField(e, 'source');
+    const localPath = strField(e, 'local_path') ?? strField(e, 'localPath');
+
+    // Local-path APM entries (added v0.4.1). APM 0.8.x emits these for
+    // `dependencies.apm: - <abs-path>` deps. Shape:
+    //   - repo_url: _local/<basename>
+    //     source: local
+    //     local_path: /abs/path
+    //     deployed_files: [<dir or file>...]
+    // (no `package`, no `resolved_commit`, no `depth`)
+    //
+    // Without the synthesis below, capture skips these entries and the
+    // resulting modules end up as `kind: "local"` — so the reproducer
+    // reports them as "not reproduced" even though `apm install`
+    // re-materializes them. Synthesizing apm-kind identity closes that
+    // misleading-report gap (v0.4.1 finding).
+    const isLocalPath = sourceField === 'local'
+      || (repoUrl !== null && repoUrl.startsWith('_local/'))
+      || localPath !== null;
+    if (isLocalPath && deployedFiles !== null) {
+      const synthesized = synthesizeLocalPathEntry({
+        repoUrl,
+        localPath,
+        deployedFiles,
+        path,
+        index: i,
+      });
+      if (synthesized !== null) entries.push(synthesized);
+      continue;
+    }
 
     if (pkg === null || repoUrl === null || resolvedCommit === null || depth === null || deployedFiles === null) {
       console.warn(
@@ -98,6 +128,89 @@ export function readApmLock(
     entries.push(out);
   }
   return entries;
+}
+
+/**
+ * Synthesize an `ApmLockEntry` from a local-path lockfile entry. APM
+ * 0.8.x records local-path deps without `package`, `resolved_commit`,
+ * or `depth`, but the harness reader needs all five fields to drive
+ * APM-source enrichment (capture.ts §2). The synthesis:
+ *
+ * - **package**: the `_local/<name>` form from `repo_url`, or
+ *   `_local/<basename>` derived from `local_path`. The `_local/`
+ *   prefix is preserved so consumers can distinguish synthesized
+ *   identities from upstream-resolved ones.
+ * - **resolvedCommit**: `git rev-parse HEAD` on the `local_path` if
+ *   it's a git repo; otherwise a sha-256 of the directory's file
+ *   contents (deterministic given identical bytes). 40-hex either way.
+ * - **depth**: 1 (local-path deps are always direct — there's no
+ *   transitive layer for them in APM's resolution).
+ *
+ * Returns null only when neither `repo_url`'s `_local/<name>` form
+ * nor `local_path`'s basename can yield a usable package name.
+ */
+function synthesizeLocalPathEntry(args: {
+  repoUrl: string | null;
+  localPath: string | null;
+  deployedFiles: string[];
+  path: string;
+  index: number;
+}): ApmLockEntry | null {
+  const { repoUrl, localPath, deployedFiles, path, index } = args;
+
+  let pkg: string;
+  if (repoUrl !== null && repoUrl.startsWith('_local/')) {
+    pkg = repoUrl;
+  } else if (localPath !== null && localPath.length > 0) {
+    pkg = `_local/${basename(localPath)}`;
+  } else {
+    console.warn(
+      `harness apm: ${path} entry [${index}] is local-path-shaped but has no repo_url or local_path; skipping`,
+    );
+    return null;
+  }
+
+  const resolvedCommit = synthesizeLocalCommit(localPath);
+  const finalRepoUrl = repoUrl ?? pkg;
+
+  return {
+    package: pkg,
+    repoUrl: finalRepoUrl,
+    resolvedCommit,
+    depth: 1,
+    deployedFiles,
+  };
+}
+
+function synthesizeLocalCommit(localPath: string | null): string {
+  // Prefer `git rev-parse HEAD` when the path is a git repo — the
+  // most natural identity stable across captures. Fall back to a
+  // content hash for non-git directories. If `localPath` is null or
+  // unreadable, return a deterministic placeholder (the path string
+  // itself, hashed) so the field is always populated.
+  const fallback = (input: string): string =>
+    createHash('sha256').update(input).digest('hex').slice(0, 40);
+
+  if (localPath === null || !existsSync(localPath)) {
+    return fallback(localPath ?? '');
+  }
+  try {
+    if (statSync(localPath).isDirectory() && existsSync(join(localPath, '.git'))) {
+      const out = execFileSync('git', ['rev-parse', 'HEAD'], {
+        cwd: localPath,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+      if (/^[0-9a-f]{40}$/.test(out)) return out;
+    }
+  } catch {
+    // git failed (no commits, detached, missing git) → fall through
+  }
+  // Content-hash fallback: not load-bearing for reproducer correctness
+  // (the reproducer drives apm install --force, which doesn't consult
+  // resolved_commit for local paths). The synthesized commit is for
+  // capture-side identity stability only.
+  return fallback(localPath);
 }
 
 /**

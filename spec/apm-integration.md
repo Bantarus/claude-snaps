@@ -80,6 +80,48 @@ two entries claim the same path (e.g. through a misconfigured manifest),
 the writer MUST select the entry with the **lower `depth`**, breaking
 ties by lexicographic order on `package`. Writers SHOULD log a warning.
 
+### 2.3 Local-path lockfile entries (v0.4.1)
+
+APM's `dependencies.apm` accepts absolute or relative local paths
+(e.g. `- ./packages/my-skills`). When such a dep resolves, APM emits
+a lockfile entry that lacks `package`, `resolved_commit`, and `depth`
+but includes `repo_url: _local/<basename>`, `source: local`, and
+`local_path: <abs>`. Writers MUST recognize these entries and
+synthesize an APM identity:
+
+| Field | Synthesized from |
+|---|---|
+| `package` | `repo_url` if it has the `_local/<name>` prefix; else `_local/<basename(local_path)>`. The `_local/` prefix is preserved so consumers can distinguish synthesized identities from upstream-resolved ones. |
+| `resolvedCommit` | `git rev-parse HEAD` of `local_path` if it's a git repo (40-hex sha); else a sha-256 of `local_path` (also 40-hex). |
+| `depth` | `1`. Local-path deps cannot have transitives via APM's depth resolution. |
+| `deployedFiles` | as recorded; see below for directory entries. |
+
+A local-path entry's `deployed_files` MAY list **directories**
+(e.g. `.claude/skills/test-fixture`) rather than individual files —
+APM treats whole skill folders as single deployment units. Module-to-
+entry matching MUST therefore support both shapes:
+
+1. **Exact file match.** If a module's path equals an entry's
+   `deployed_files[i]`, that's the match (existing behavior).
+2. **Directory-prefix match.** Otherwise, if the module's path starts
+   with `<deployed_files[i]>/` (boundary-respecting), the entry
+   matches. On multiple matches, longest-prefix wins; on ties,
+   lower-depth wins.
+
+Without this synthesis, modules deployed by local-path APM deps would
+be captured as `kind: "local"`. Reproduction would still re-install
+them via `apm install --force` (the lockfile bytes drive APM
+regardless of capture-time classification), but the reproducer's
+report would mislabel them as "local-source NOT reproduced" —
+prompting users to manually copy old local files back over the
+just-reinstalled APM versions. v0.4.1 closes that gap.
+
+The synthesized `resolvedCommit` is **not** load-bearing for the
+reproducer's correctness — it doesn't drive `apm install`'s resolution
+path for local-path entries (APM uses `local_path` for those). The
+field exists to give the snapshot a stable identity for capture-side
+diff, dedup, and content-addressing.
+
 ## 3. The `apmLockHash` top-level field
 
 [format.md §2.1](format.md#21-required-and-optional-fields) defines
@@ -130,8 +172,12 @@ Given a snapshot at `.harness/snapshots/<aa>/<rest>.json`, the operation
 
 1. For modules with `source.kind == "apm"`, re-materialize files via APM,
    pinned to each entry's `resolvedCommit`. The reference reproducer
-   SHOULD invoke `apm install --frozen` (or APM's equivalent) against
-   a generated `apm.lock.yaml` that pins those commits, then verify
+   invokes APM in lockfile-honoring install mode against the snapshot's
+   recorded `apmLockfile` content. With APM 0.8.x this is
+   `apm install --force` — the lockfile bytes already pin remote
+   commits via `resolved_commit` and pin local-path deps via
+   `local_path` (§2.3); `--force` is needed because the reproducer
+   typically overwrites a drifted `.claude/`. After install, verify
    `apmLockHash` matches.
 2. For modules with `source.kind == "local"`, **v0.1 records only the
    path**. Reproduction is best-effort: the reproducer can warn that

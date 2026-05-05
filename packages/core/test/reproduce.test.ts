@@ -39,6 +39,20 @@ describe('Repo.reproduce — APM end-to-end (gate 17)', () => {
       expect(snap.apmLockfile?.length ?? 0).toBeGreaterThan(0);
       expect(snap.apmLockHash).toMatch(/^sha256:[0-9a-f]{64}$/);
 
+      // v0.4.1: the deployed skill MUST be classified as apm-kind via
+      // the local-path enricher (apm-integration.md §2.3). Pre-v0.4.1
+      // it landed as local-kind because local-path lockfile entries
+      // lack resolved_commit and were skipped by the reader.
+      const skillModule = snap.modules.find(
+        (m) => m.type === 'skill' && m.name === fixture.skillName,
+      );
+      expect(skillModule).toBeDefined();
+      expect(skillModule!.source.kind).toBe('apm');
+      if (skillModule!.source.kind === 'apm') {
+        expect(skillModule!.source.package).toMatch(/^_local\//);
+        expect(skillModule!.source.depth).toBe(1);
+      }
+
       // Phase 2: mutate .claude/ — break the deployed file.
       writeFileSync(
         join(proj, '.claude', 'skills', fixture.skillName, 'SKILL.md'),
@@ -47,17 +61,23 @@ describe('Repo.reproduce — APM end-to-end (gate 17)', () => {
       );
       expect(readClaudeFile(proj, 'skills', fixture.skillName, 'SKILL.md')).toBe('# corrupted\n');
 
-      // Phase 3: reproduce. The reproducer should write apm.lock.yaml,
-      // run apm install --frozen, and the deployed SKILL.md should be
-      // restored.
+      // Phase 3: reproduce. The reproducer writes apm.lock.yaml, runs
+      // `apm install --force`, re-walks .claude/, and verifies each
+      // apm-kind module's configHash matches the snapshot's recorded
+      // value.
       const result = repo.reproduce(snapId);
       expect(result.dryRun).toBe(false);
       expect(result.headAdvanced).toBe(true);
-      // APM phase: skipped if no apm-kind modules; success if any. Local-path
-      // APM produces local-kind modules, so skipped is the expected shape
-      // for v0.4 unless the reader is later enhanced. Either is acceptable;
-      // what matters is that apm install --frozen ran (verified below).
-      expect(['skipped', 'success']).toContain(result.apmPhase);
+      // v0.4.1: apm-kind modules now exist in the snapshot, so the APM
+      // phase MUST run successfully (skipped is no longer acceptable).
+      expect(result.apmPhase).toBe('success');
+      expect(result.apmModulesExpected).toBeGreaterThan(0);
+      expect(result.apmModulesVerified).toBe(result.apmModulesExpected);
+      expect(result.apmFailures).toEqual([]);
+      // The skill is APM-managed; it must NOT appear under local-source.
+      expect(
+        result.localSourceReported.some((m) => m.name === fixture.skillName),
+      ).toBe(false);
 
       // The mutated content must be replaced by the originally-deployed bytes.
       expect(readClaudeFile(proj, 'skills', fixture.skillName, 'SKILL.md')).toBe(baselineContent);

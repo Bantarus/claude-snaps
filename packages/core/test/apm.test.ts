@@ -148,3 +148,77 @@ packages:
     expect(readApmLock(tmp)).toBeNull();
   });
 });
+
+describe('readApmLock — local-path entry synthesis (v0.4.1)', () => {
+  test('local-path entry synthesizes apm-kind identity (repo_url _local/<name>)', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'apm-localpath-'));
+    const fakeLocal = mkdtempSync(join(tmpdir(), 'fake-local-'));
+    const lock = `
+dependencies:
+- repo_url: _local/source
+  package_type: apm_package
+  deployed_files:
+    - .claude/skills/test-fixture
+  source: local
+  local_path: ${fakeLocal}
+`;
+    writeFileSync(join(tmp, 'apm.lock.yaml'), lock, 'utf-8');
+    const entries = readApmLock(tmp)!;
+    expect(entries.length).toBe(1);
+    const e = entries[0]!;
+    expect(e.package).toBe('_local/source');
+    expect(e.depth).toBe(1);
+    expect(e.repoUrl).toBe('_local/source');
+    expect(e.deployedFiles).toEqual(['.claude/skills/test-fixture']);
+    // resolvedCommit is synthesized — 40 hex either from git rev-parse
+    // or content-hash fallback.
+    expect(e.resolvedCommit).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  test('local-path entry without repo_url falls back to local_path basename', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'apm-lp-basename-'));
+    const fakeLocal = mkdtempSync(join(tmpdir(), 'lib-foo-'));
+    const lock = `
+dependencies:
+- source: local
+  local_path: ${fakeLocal}
+  deployed_files:
+    - .claude/skills/x
+`;
+    writeFileSync(join(tmp, 'apm.lock.yaml'), lock, 'utf-8');
+    const entries = readApmLock(tmp)!;
+    expect(entries.length).toBe(1);
+    expect(entries[0]!.package).toMatch(/^_local\/lib-foo-/);
+  });
+
+  test('local-path entry where local_path is a git repo uses git HEAD', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'apm-lp-git-'));
+    const repo = mkdtempSync(join(tmpdir(), 'gitrepo-'));
+    const fs = require('node:fs') as typeof import('node:fs');
+    fs.writeFileSync(join(repo, 'a.txt'), 'hello\n', 'utf-8');
+    const cp = require('node:child_process') as typeof import('node:child_process');
+    const env = {
+      ...process.env,
+      GIT_AUTHOR_NAME: 't',
+      GIT_AUTHOR_EMAIL: 't@t',
+      GIT_COMMITTER_NAME: 't',
+      GIT_COMMITTER_EMAIL: 't@t',
+    };
+    cp.execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repo, env });
+    cp.execFileSync('git', ['add', '-A'], { cwd: repo, env });
+    cp.execFileSync('git', ['commit', '-q', '-m', 'init'], { cwd: repo, env });
+    const expectedSha = cp.execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, env, encoding: 'utf-8' }).trim();
+
+    const lock = `
+dependencies:
+- repo_url: _local/gitrepo
+  source: local
+  local_path: ${repo}
+  deployed_files:
+    - .claude/skills/x
+`;
+    writeFileSync(join(tmp, 'apm.lock.yaml'), lock, 'utf-8');
+    const entries = readApmLock(tmp)!;
+    expect(entries[0]!.resolvedCommit).toBe(expectedSha);
+  });
+});

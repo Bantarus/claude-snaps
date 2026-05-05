@@ -53,8 +53,8 @@ function renderResult(r: ReproduceResult, refLabel: string): void {
     w(`${c.dim('— APM phase skipped (no apmLockfile recorded on this snapshot)')}\n`);
   } else if (r.apmPhase === 'success') {
     w(r.dryRun
-      ? `${prefix}reconstruct apm.lock.yaml + run apm install --frozen\n${prefix}verify ${r.apmModulesExpected} APM module(s)\n`
-      : `${c.add('✓')} apm install --frozen succeeded; verified ${c.bold(`${r.apmModulesVerified}`)} of ${c.bold(`${r.apmModulesExpected}`)} APM module(s)\n`);
+      ? `${prefix}reconstruct apm.lock.yaml + run apm install --force\n${prefix}verify ${r.apmModulesExpected} APM module(s)\n`
+      : `${c.add('✓')} apm install --force succeeded; verified ${c.bold(`${r.apmModulesVerified}`)} of ${c.bold(`${r.apmModulesExpected}`)} APM module(s)\n`);
   } else {
     // failed
     w(`${c.rm('✗')} APM phase failed\n`);

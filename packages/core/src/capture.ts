@@ -236,16 +236,30 @@ function hookEntries(settings: Record<string, unknown>): [string, unknown][] {
 function enrichWithApm(modules: Module[], lock: ApmLockEntry[]): void {
   // Build (path → entry) lookup. If the same path appears in multiple
   // entries, prefer the lower-depth entry per spec/apm-integration.md §2.2.
+  //
+  // Local-path APM lockfile entries (added v0.4.1) list directories in
+  // `deployed_files`, not individual files (e.g. `.claude/skills/test-fixture`
+  // rather than `.../SKILL.md`). The path-match supports both: an exact
+  // file match takes precedence, and a directory-prefix match is the
+  // fallback. This keeps remote-shaped entries' file-level matching
+  // unchanged while letting local-path entries enrich the modules whose
+  // captured paths live under the deployed directory.
   const byPath = new Map<string, ApmLockEntry>();
+  const byDir: Array<{ dir: string; entry: ApmLockEntry }> = [];
   for (const e of lock) {
     for (const p of e.deployedFiles) {
-      const existing = byPath.get(p);
-      if (existing === undefined || e.depth < existing.depth) byPath.set(p, e);
+      if (looksLikeDirectory(p)) {
+        byDir.push({ dir: p.replace(/\/$/, ''), entry: e });
+      } else {
+        const existing = byPath.get(p);
+        if (existing === undefined || e.depth < existing.depth) byPath.set(p, e);
+      }
     }
   }
   for (const m of modules) {
     if (m.source.kind !== 'local') continue;
-    const entry = byPath.get(m.source.path);
+    const exact = byPath.get(m.source.path);
+    const entry = exact ?? findByDirPrefix(byDir, m.source.path);
     if (entry === undefined) continue;
     const newSrc: ModuleSource = {
       kind: 'apm',
@@ -258,6 +272,42 @@ function enrichWithApm(modules: Module[], lock: ApmLockEntry[]): void {
     }
     m.source = newSrc;
   }
+}
+
+function looksLikeDirectory(p: string): boolean {
+  // Heuristic: directory deployed_files lack a file extension OR end
+  // with `/`. APM 0.8.x emits forms like `.claude/skills/test-fixture`
+  // (no extension) for skill directories. File entries always carry a
+  // recognized extension (`.md`, `.json`, etc.). The check below
+  // misclassifies a hypothetical extensionless file as a directory,
+  // but no APM-deployed file is extensionless in the v0.1 type
+  // vocabulary (format.md §2.5).
+  if (p.endsWith('/')) return true;
+  const base = p.split('/').pop() ?? '';
+  return !base.includes('.');
+}
+
+function findByDirPrefix(
+  byDir: ReadonlyArray<{ dir: string; entry: ApmLockEntry }>,
+  modulePath: string,
+): ApmLockEntry | undefined {
+  // Longest-prefix-wins, then lower-depth-wins. Tie-broken by entry
+  // order in the lockfile (which the caller sorts by depth in the
+  // upstream reader). Directory boundary check: `path.startsWith(dir + '/')`
+  // — prevents `.claude/skills/foo-extra` from matching dir
+  // `.claude/skills/foo`.
+  let best: { entry: ApmLockEntry; matchLen: number } | undefined;
+  for (const { dir, entry } of byDir) {
+    if (!modulePath.startsWith(`${dir}/`)) continue;
+    if (
+      best === undefined
+      || dir.length > best.matchLen
+      || (dir.length === best.matchLen && entry.depth < best.entry.depth)
+    ) {
+      best = { entry, matchLen: dir.length };
+    }
+  }
+  return best?.entry;
 }
 
 const TYPE_ORDER: Record<ModuleType, number> = {
