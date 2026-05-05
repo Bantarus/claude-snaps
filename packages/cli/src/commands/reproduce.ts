@@ -59,11 +59,17 @@ function renderResult(r: ReproduceResult, refLabel: string): void {
     // failed
     w(`${c.rm('✗')} APM phase failed\n`);
     if (r.apmStderr !== undefined && r.apmStderr.trim().length > 0) {
-      const indented = r.apmStderr
-        .trim()
-        .split('\n')
-        .map((line) => `    ${line}`)
-        .join('\n');
+      // v0.4.1 cosmetic: prefix the dump with a one-line summary so the
+      // headline is visible without scrolling through (potentially
+      // large) traceback output. The summary picks the first non-empty
+      // line containing "Error" or "Failed" if present, falling back
+      // to the first non-empty line.
+      const stderrLines = r.apmStderr.trim().split('\n').filter((l) => l.length > 0);
+      const summary = stderrLines.find((l) => /Error|Failed|Exception/i.test(l)) ?? stderrLines[0];
+      if (summary !== undefined) {
+        w(`  ${c.rm('summary:')} ${summary.trim()}\n`);
+      }
+      const indented = r.apmStderr.trim().split('\n').map((line) => `    ${line}`).join('\n');
       w(`${c.dim(indented)}\n`);
     }
     if (r.apmFailures.length > 0) {
@@ -88,6 +94,22 @@ function renderResult(r: ReproduceResult, refLabel: string): void {
     w(`${c.dim('— Local-source modules NOT reproduced (per §6.1; APM only):')}\n`);
     for (const m of r.localSourceReported) {
       w(`    ${c.dim(`${m.type} ${m.name} (${m.path})`)}\n`);
+    }
+  }
+
+  // Subtractive cleanup (v0.4.1; spec §6.1) — paths removed because
+  // they were APM-managed in the prior state but aren't in the target.
+  if (r.pathsRemoved.length > 0 || r.projectLockfileRemoved) {
+    if (r.dryRun) {
+      w(`${c.dim('— Would remove (subtractive scope):')}\n`);
+    } else {
+      w(`${c.rm('−')} Removed (subtractive scope, ${r.pathsRemoved.length} path${r.pathsRemoved.length === 1 ? '' : 's'}):\n`);
+    }
+    for (const p of r.pathsRemoved) {
+      w(`    ${c.rm(`− ${p}`)}\n`);
+    }
+    if (r.projectLockfileRemoved) {
+      w(`    ${c.rm('− apm.lock.yaml')} ${c.dim('(target recorded no APM state; backup at apm.lock.yaml.harness-backup)')}\n`);
     }
   }
 

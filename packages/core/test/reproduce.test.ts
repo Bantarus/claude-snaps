@@ -230,6 +230,204 @@ describe('Snapshot id varies with apmLockfile (gate 21)', () => {
   });
 });
 
+describe('Repo.reproduce — subtractive within scope (gate 22, v0.4.1)', () => {
+  test('reproducing an ancestor removes APM-managed paths added since', () => {
+    // Build a real lineage: init (no APM) → auto (after apm install) →
+    // reproduce(init) MUST leave .claude/ byte-equivalent (modulo
+    // local-source) to a fresh capture of init.
+    const fixture = setupLocalApmSource();
+    const proj = setupProjectWithApmDep(fixture.repoPath);
+
+    // Pre-APM baseline: capture init.
+    const repo = Repo.init(proj);
+    try {
+      const initId = repo.observe({
+        sessionId: 'sess-init',
+        eventKind: 'session_start',
+        source: 'startup',
+      });
+      const initSnap = repo.snapshot(initId);
+      expect(initSnap.apmLockfile).toBeNull();
+      // No apm-test deployed yet — the skill directory must not exist.
+      expect(existsSync(join(proj, '.claude', 'skills', fixture.skillName))).toBe(false);
+
+      // APM install: deploy fixture and re-observe.
+      execFileSync('apm', ['install'], { cwd: proj, stdio: ['ignore', 'pipe', 'pipe'] });
+      expect(existsSync(join(proj, '.claude', 'skills', fixture.skillName, 'SKILL.md'))).toBe(true);
+      const afterApmId = repo.observe({
+        sessionId: 'sess-after-apm',
+        eventKind: 'session_start',
+        source: 'startup',
+      });
+      expect(afterApmId).not.toBe(initId);
+
+      // Reproduce the init snapshot. Subtractive contract: the
+      // apm-test skill directory must be removed because it isn't in
+      // init's APM scope (init has no apmLockfile). The project's
+      // apm.lock.yaml must also be removed (target recorded no APM).
+      const result = repo.reproduce(initId);
+      expect(result.headAdvanced).toBe(true);
+      expect(result.apmPhase).toBe('skipped'); // init has null apmLockfile
+      expect(result.pathsRemoved).toContain(`.claude/skills/${fixture.skillName}`);
+      expect(result.projectLockfileRemoved).toBe(true);
+
+      // Byte-identity (modulo local-source paths, which the
+      // contract excludes from removal): apm-test directory is gone,
+      // apm.lock.yaml is gone, only init's local-source files remain.
+      expect(existsSync(join(proj, '.claude', 'skills', fixture.skillName))).toBe(false);
+      expect(existsSync(join(proj, 'apm.lock.yaml'))).toBe(false);
+      // The backup of the lockfile is retained.
+      expect(existsSync(join(proj, 'apm.lock.yaml.harness-backup'))).toBe(true);
+
+      // Identity-layer equivalence with init: recompute the
+      // snapshot id from the live state and confirm it matches
+      // initId. We bypass observe() (which refuses detached HEAD
+      // after reproduce) and call snapshotId() directly with
+      // init's parents+branch+kind. The assertion is on the
+      // canonical-bytes equivalence — same modules, same
+      // apmLockHash, same apmLockfile produce the same id.
+      const liveModules = repo.workingTree();
+      const liveLockHash = repo.apmLockHash();
+      const liveLockfile = repo.apmLockfileContent();
+      const recomputedId = snapshotId({
+        formatVersion: initSnap.formatVersion ?? '0.4',
+        parentIds: initSnap.parentIds,
+        branch: initSnap.branch,
+        kind: initSnap.kind,
+        codePin: initSnap.codePin,
+        apmLockHash: liveLockHash,
+        apmLockfile: liveLockfile,
+        createdAt: initSnap.createdAt,
+        modules: liveModules,
+      });
+      expect(recomputedId).toBe(initId);
+    } finally {
+      repo.close();
+      rmSync(proj, { recursive: true, force: true });
+      rmSync(fixture.repoPath, { recursive: true, force: true });
+    }
+  });
+
+  test('reproducing forward (no APM → APM) installs without removing local-source', () => {
+    // The other direction: starting from a no-APM state, reproduce a
+    // snapshot that has APM. Must install correctly and NOT touch
+    // local-source files that exist on both sides.
+    const fixture = setupLocalApmSource();
+    const proj = setupProjectWithApmDep(fixture.repoPath);
+
+    // Add a hand-written local skill that's NOT in the APM scope.
+    // Both before and after the lineage transition, this file should
+    // survive untouched (per §6.1: "Local-source paths are not touched").
+    const localPath = join(proj, '.claude', 'skills', 'hand-written');
+    require('node:fs').mkdirSync(localPath, { recursive: true });
+    writeFileSync(
+      join(localPath, 'SKILL.md'),
+      '---\nname: hand-written\ndescription: local-only\n---\n# Hand\n',
+      'utf-8',
+    );
+    const localContent = readFileSync(join(localPath, 'SKILL.md'), 'utf-8');
+
+    const repo = Repo.init(proj);
+    try {
+      const initId = repo.observe({ sessionId: 'sess-1', eventKind: 'session_start', source: 'startup' });
+
+      execFileSync('apm', ['install'], { cwd: proj, stdio: ['ignore', 'pipe', 'pipe'] });
+      const apmId = repo.observe({ sessionId: 'sess-2', eventKind: 'session_start', source: 'startup' });
+
+      // Reproduce the APM snapshot — should ADD apm-test and NOT
+      // remove the hand-written skill. Sanity-check both directions.
+      // First reproduce init to clear apm-test, then reproduce apmId.
+      repo.reproduce(initId);
+      expect(existsSync(join(proj, '.claude', 'skills', fixture.skillName))).toBe(false);
+      expect(existsSync(join(localPath, 'SKILL.md'))).toBe(true); // local untouched
+
+      const result = repo.reproduce(apmId);
+      expect(result.apmPhase).toBe('success');
+      expect(result.pathsRemoved).toEqual([]); // forward direction, nothing to subtract
+      expect(existsSync(join(proj, '.claude', 'skills', fixture.skillName, 'SKILL.md'))).toBe(true);
+      // Local hand-written skill survives both reproduces.
+      expect(readFileSync(join(localPath, 'SKILL.md'), 'utf-8')).toBe(localContent);
+    } finally {
+      repo.close();
+      rmSync(proj, { recursive: true, force: true });
+      rmSync(fixture.repoPath, { recursive: true, force: true });
+    }
+  });
+
+  test('subtractive cleanup never deletes paths outside .claude/', () => {
+    // Defensive: a hypothetical lockfile that listed paths outside
+    // .claude/ (e.g. an attacker-crafted apm.lock.yaml with
+    // `deployed_files: [/etc/passwd]`) MUST NOT cause the reproducer
+    // to delete arbitrary files.
+    const fixture = setupLocalApmSource();
+    const proj = setupProjectWithApmDep(fixture.repoPath);
+    execFileSync('apm', ['install'], { cwd: proj, stdio: ['ignore', 'pipe', 'pipe'] });
+
+    // Inject a marker file outside .claude/ at project root.
+    const marker = join(proj, 'IMPORTANT-USER-FILE.txt');
+    writeFileSync(marker, 'preserved\n', 'utf-8');
+
+    // Tamper with apm.lock.yaml to add deployed_files entries outside
+    // .claude/. (We don't go through APM for this — write the YAML
+    // by hand to simulate the malicious case.) The first entry is
+    // the real deployed skill path (so the cleanup actually attempts
+    // to remove something); the second and third are out-of-scope
+    // paths that the defensive filter MUST refuse to touch.
+    writeFileSync(join(proj, 'apm.lock.yaml'), `
+lockfile_version: '1'
+dependencies:
+  - repo_url: _local/test
+    source: local
+    local_path: ${fixture.repoPath}
+    deployed_files:
+      - .claude/skills/${fixture.skillName}
+      - IMPORTANT-USER-FILE.txt
+      - ../../etc/passwd
+`, 'utf-8');
+
+    const repo = Repo.init(proj);
+    try {
+      // Capture an init that includes the malicious lockfile state.
+      const initId = repo.observe({ sessionId: 'sess-tamper', eventKind: 'session_start', source: 'startup' });
+
+      // Build a synthetic target snapshot with NO apmLockfile so the
+      // subtractive pass tries to remove all paths in the current
+      // (tampered) lockfile. The defensive check should keep
+      // IMPORTANT-USER-FILE.txt and /etc/passwd untouched.
+      const targetSnap: Omit<Snapshot, 'id'> = {
+        formatVersion: '0.4',
+        parentIds: [],
+        branch: 'main',
+        kind: 'init',
+        codePin: null,
+        apmLockHash: null,
+        apmLockfile: null,
+        createdAt: '2026-05-05T00:00:00.000Z',
+        modules: [],
+      };
+      const written = repo.writeSnapshot(targetSnap);
+      const result = repo.reproduce(written.id);
+
+      // The marker file MUST still exist.
+      expect(existsSync(marker)).toBe(true);
+      expect(readFileSync(marker, 'utf-8')).toBe('preserved\n');
+      // /etc/passwd MUST exist (we'd be sad otherwise).
+      expect(existsSync('/etc/passwd')).toBe(true);
+      // The in-scope path was removed.
+      expect(result.pathsRemoved).toContain(`.claude/skills/${fixture.skillName}`);
+      // The marker is NOT in the removal list.
+      expect(result.pathsRemoved).not.toContain('IMPORTANT-USER-FILE.txt');
+      // No traversal escapes.
+      expect(result.pathsRemoved.every((p) => p.startsWith('.claude'))).toBe(true);
+      void initId;
+    } finally {
+      repo.close();
+      rmSync(proj, { recursive: true, force: true });
+      rmSync(fixture.repoPath, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('Repo.reproduce — apm not on PATH aborts before backup', () => {
   test('PATH-stripped invocation throws and does NOT create a backup', () => {
     const fixture = setupLocalApmSource();

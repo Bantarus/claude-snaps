@@ -544,7 +544,7 @@ Working tree matches <id>; no reproduce needed.
 **Verify.** The "matches" line is rendered in dim color; if your
 terminal supports color you'll see it muted; either way it appears.
 
-### D3. Capture history → reproduce an ancestor
+### D3. Capture history → reproduce an ancestor (subtractive contract)
 
 **Pre.** A1–B5 done. There should be ≥3 snapshots: the baseline init
 (A1), the APM-enriched auto (B3), maybe the C2 hand-edit auto.
@@ -560,30 +560,41 @@ harness reproduce "$INIT"
 ```
 
 **Expected.** The reproducer rolls `.claude/` back to the init
-state (no apm-test skill, no APM lockfile). HEAD detaches at the
-init id.
+state. Per §6.1's subtractive contract (v0.4.1):
+
+- `apm-test/` skill directory is **removed** (it's in the project's
+  current APM scope but not in init's modules).
+- `apm.lock.yaml` is **removed** (init recorded no APM state;
+  target `apmLockfile` is null). Backup retained at
+  `apm.lock.yaml.harness-backup`.
+- Local-source files (`notes/SKILL.md`, hooks in `settings.json`,
+  etc.) are **untouched**.
+- HEAD detaches at the init id.
+
+The CLI output shows the cleanup explicitly:
+```
+− Removed (subtractive scope, 1 path):
+    − .claude/skills/apm-test
+    − apm.lock.yaml (target recorded no APM state; backup at apm.lock.yaml.harness-backup)
+```
 
 **Verify.**
 ```bash
-ls .claude/skills/      # should NOT include apm-test
+ls .claude/skills/      # should NOT include apm-test/
+ls apm.lock.yaml 2>&1   # should NOT exist
+ls apm.lock.yaml.harness-backup 2>&1  # backup retained
 cat .harness/HEAD       # equals $INIT
 ```
-Wait — actually the init state didn't have an APM lockfile at all,
-but apm.lock.yaml is still on disk in the project (from B2). What
-the reproducer does NOT do: remove the project's
-`apm.lock.yaml` when reproducing a no-APM snapshot. The lockfile
-remains; the reproduce phase is skipped for that snapshot. APM
-itself, on next install, would still install based on apm.lock.yaml.
 
-**Observation worth flagging.** Reproducing across "added APM later"
-boundaries is partial: the snapshot's `.claude/` shape is restored,
-but the project's `apm.lock.yaml` is not deleted. That's the
-reproducer being conservative — deleting `apm.lock.yaml` during a
-no-APM reproduce could destroy the user's working APM state. The
-backup captures `.claude/`, NOT project root. If you genuinely want
-to roll the project back to pre-APM, you'd `git checkout` to the
-project's pre-APM commit — which is what `codePin` exists to record
-(though the reproducer does NOT touch git state).
+The byte-identity claim: a fresh re-capture against this state
+must produce the same snapshot id as `$INIT`. The reproduce gate
+in `packages/core/test/reproduce.test.ts` asserts this directly.
+
+**Observation.** The v0.4.0 ship ran this case and observed the
+*additive* behavior (apm-test/ stayed, apm.lock.yaml stayed). That
+was the v0.4.1 finding — fixed via §6.1's subtractive amendment.
+If you see the additive behavior now, the subtractive logic
+regressed; stop and investigate.
 
 ---
 

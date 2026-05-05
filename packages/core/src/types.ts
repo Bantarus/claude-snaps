@@ -87,6 +87,21 @@ export interface ReproduceResult {
   localSourceReported: Array<{ name: string; type: string; path: string; configHash?: string }>;
   /** True when HEAD was advanced to snapshotId at the end of a successful reproduction. */
   headAdvanced: boolean;
+  /**
+   * Paths under `.claude/` that were APM-managed in the project's
+   * pre-reproduce state but are NOT in the target snapshot's APM scope
+   * — removed before HEAD advances per §6.1's subtractive contract
+   * (added v0.4.1). Empty when the target snapshot's APM scope is a
+   * superset of the project's current APM state, or when no APM
+   * lockfile exists either side.
+   */
+  pathsRemoved: string[];
+  /**
+   * True when the project's `apm.lock.yaml` was removed because the
+   * target snapshot recorded no APM state (apmLockfile null). Backed
+   * up to `apm.lock.yaml.harness-backup` before removal.
+   */
+  projectLockfileRemoved: boolean;
 }
 
 // Attribution event — a session's observation of a snapshot at an

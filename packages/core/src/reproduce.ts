@@ -1,8 +1,10 @@
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import {
   apmLockHash as apmLockHashOf,
+  parseApmLockfile,
+  readApmLock,
   runApmInstallLocked,
   writeApmLockfile,
 } from './apm.js';
@@ -89,6 +91,15 @@ export function reproduceSnapshot(args: {
   const backupPath = computeBackupPath(projectRoot);
   const headPath = join(harnessDir, 'HEAD');
 
+  // SUBTRACTIVE CLEANUP PRECOMPUTE (v0.4.1; spec §6.1).
+  // Compute the set of paths the reproducer would remove. Done before
+  // any side effect so dry-run can describe the planned cleanup.
+  const subtractiveScope = computeSubtractiveScope({
+    projectRoot,
+    targetLockfileContent: snapshot.apmLockfile ?? null,
+    targetModules: snapshot.modules,
+  });
+
   if (dryRun) {
     return {
       snapshotId,
@@ -102,6 +113,8 @@ export function reproduceSnapshot(args: {
       builtinsMissing: [],
       localSourceReported,
       headAdvanced: false,
+      pathsRemoved: subtractiveScope.pathsToRemove,
+      projectLockfileRemoved: subtractiveScope.willRemoveProjectLockfile,
     };
   }
 
@@ -195,7 +208,41 @@ export function reproduceSnapshot(args: {
     }
   }
 
-  // 5. Advance HEAD if APM phase was not failed. Detached.
+  // 5. SUBTRACTIVE PASS (v0.4.1; spec §6.1).
+  //    Only on a clean APM phase — if install failed, we leave the
+  //    backup as-is and don't touch the (potentially partial) tree
+  //    further. Files that were APM-managed in the prior state but
+  //    aren't in the target snapshot's scope OR target's local-source
+  //    paths are removed. Local-source paths are never touched.
+  //    Project-root apm.lock.yaml is removed when target recorded no
+  //    APM state.
+  const pathsRemoved: string[] = [];
+  let projectLockfileRemoved = false;
+  if (apmPhase !== 'failed') {
+    for (const rel of subtractiveScope.pathsToRemove) {
+      const abs = join(projectRoot, rel);
+      try {
+        if (existsSync(abs)) {
+          rmSync(abs, { recursive: true, force: true });
+          pathsRemoved.push(rel);
+        }
+      } catch (cause) {
+        throw new IoError(`failed to remove ${abs}`, cause);
+      }
+    }
+    if (subtractiveScope.willRemoveProjectLockfile) {
+      const lockfilePath = join(projectRoot, 'apm.lock.yaml');
+      try {
+        copyFileSync(lockfilePath, `${lockfilePath}.harness-backup`);
+        rmSync(lockfilePath, { force: true });
+        projectLockfileRemoved = true;
+      } catch (cause) {
+        throw new IoError(`failed to remove ${lockfilePath}`, cause);
+      }
+    }
+  }
+
+  // 6. Advance HEAD if APM phase was not failed. Detached.
   let headAdvanced = false;
   if (apmPhase !== 'failed') {
     try {
@@ -218,9 +265,82 @@ export function reproduceSnapshot(args: {
     builtinsMissing,
     localSourceReported,
     headAdvanced,
+    pathsRemoved,
+    projectLockfileRemoved,
   };
   if (apmStderr !== undefined) result.apmStderr = apmStderr;
   return result;
+}
+
+/**
+ * Compute which paths the subtractive pass would remove. Pure read-
+ * only function; safe to call from dry-run.
+ *
+ * Algorithm (v0.4.1; spec/format.md §6.1):
+ *   current_apm_paths = deployed_files entries from project's live
+ *                       apm.lock.yaml (if present)
+ *   target_apm_paths  = deployed_files entries from snapshot.apmLockfile
+ *                       (if non-null)
+ *   target_local_paths = m.source.path for each local-kind module in
+ *                        target snapshot
+ *
+ *   pathsToRemove = current_apm_paths
+ *                 - target_apm_paths
+ *                 - target_local_paths
+ *
+ *   willRemoveProjectLockfile = (target.apmLockfile is null) AND
+ *                                project has live apm.lock.yaml
+ *
+ * Restricting removal to paths under `.claude/` is enforced by the
+ * deployed_files shape — APM only deploys into `.claude/` (or the
+ * other tool-specific dirs we don't claim). Per the amendment, local-
+ * source paths are excluded from removal even if they happen to
+ * appear in the live lockfile (defensive: a misconfigured project
+ * shouldn't lose hand-written files to the reproducer).
+ */
+function computeSubtractiveScope(args: {
+  projectRoot: string;
+  targetLockfileContent: string | null;
+  targetModules: Module[];
+}): { pathsToRemove: string[]; willRemoveProjectLockfile: boolean } {
+  const { projectRoot, targetLockfileContent, targetModules } = args;
+
+  const currentEntries = readApmLock(projectRoot) ?? [];
+  const targetEntries = targetLockfileContent !== null
+    ? (parseApmLockfile(targetLockfileContent, '<snapshot.apmLockfile>') ?? [])
+    : [];
+
+  const currentApmPaths = new Set<string>(currentEntries.flatMap((e) => e.deployedFiles));
+  const targetApmPaths = new Set<string>(targetEntries.flatMap((e) => e.deployedFiles));
+  const targetLocalPaths = new Set<string>(
+    targetModules
+      .filter((m) => m.source.kind === 'local')
+      .map((m) => (m.source as { path: string }).path),
+  );
+
+  const pathsToRemove: string[] = [];
+  for (const p of currentApmPaths) {
+    if (targetApmPaths.has(p)) continue;
+    if (targetLocalPaths.has(p)) continue;
+    if (isPathUnderClaudeDir(p)) pathsToRemove.push(p);
+  }
+  // Stable order — sort lexicographically so dry-run output is
+  // deterministic and tests can pin the rendering.
+  pathsToRemove.sort();
+
+  const lockfilePath = join(projectRoot, 'apm.lock.yaml');
+  const willRemoveProjectLockfile =
+    targetLockfileContent === null && existsSync(lockfilePath);
+
+  return { pathsToRemove, willRemoveProjectLockfile };
+}
+
+function isPathUnderClaudeDir(p: string): boolean {
+  // Restrict removal to the `.claude/` subtree. Defensive: a
+  // hypothetical lockfile that lists paths outside `.claude/` (e.g.
+  // a misconfigured `deployed_files` pointing at `/etc/...`) MUST
+  // NOT cause the reproducer to delete arbitrary files.
+  return p === '.claude' || p.startsWith('.claude/');
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────

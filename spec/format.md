@@ -949,6 +949,27 @@ time produce snapshots whose reproducer is a no-op for content
   promote it to APM. Storing local-source content (option (d) in
   prompt v0.4.0's pre-thoughts) is a deferred decision; see §9.4.
 
+**Subtractive within scope (v0.4.1).** Reproduction is subtractive
+within its scope. APM-managed paths and builtin verifications
+recorded in the snapshot are materialized exactly. APM-managed paths
+not recorded in the target snapshot but present in the working
+`.claude/` are removed before HEAD advances. The project's
+`apm.lock.yaml` is restored to match the snapshot's recorded
+`apmLockfile` (written if non-null; removed if the snapshot recorded
+no APM state). Local-source paths are not touched. The unconditional
+backup is the recovery path; users wishing to merge state across
+snapshots do so manually from the backup.
+
+Rationale: reproduction's value depends on the working tree post-
+reproduce being byte-equivalent (modulo local-source) to a fresh
+capture of the target snapshot. An additive-only reproducer leaves
+files from the prior state behind and silently breaks that
+equivalence — a subsequent `harness diff HEAD` against working state
+would show extras and the user has to disambiguate "drift since
+reproduce" from "leftover the reproducer didn't clean." The
+unconditional backup, not the absence of deletion, is the safety
+mechanism.
+
 **Side effects:**
 
 - `.claude/` is backed up to `.claude.harness-backup-<ISO timestamp>/`
@@ -956,8 +977,9 @@ time produce snapshots whose reproducer is a no-op for content
   flag) and not auto-deleted. Manual restoration is `mv` of the backup
   back over `.claude/`. The backup path is printed on every invocation,
   including dry-run.
-- `apm install --frozen` writes APM-managed files into `.claude/`
-  (subject to APM's own deployment rules).
+- APM's lockfile-honoring install (`apm install --force`) writes
+  APM-managed files into `.claude/` (subject to APM's own deployment
+  rules) when the snapshot's `apmLockfile` is non-null.
 - `.harness/HEAD` advances to the reproduced snapshot id on success
   (whether the snapshot is a branch tip or a detached id). The
   reproducer does not rewrite branch refs.

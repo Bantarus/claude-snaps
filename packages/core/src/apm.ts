@@ -43,18 +43,35 @@ export function readApmLock(
   const path = join(projectRoot, filename);
   if (!existsSync(path)) return null;
   const raw = readFileSync(path, 'utf-8');
+  return parseApmLockfile(raw, path);
+}
+
+/**
+ * Parse an apm.lock.yaml content string into entries. Used by the
+ * v0.4.1 reproducer to operate on the snapshot's recorded
+ * `apmLockfile` content without writing it to disk first.
+ *
+ * @throws {ParseError} only on truly malformed YAML.
+ */
+export function parseApmLockfile(
+  raw: string,
+  sourceLabel: string = '<inline>',
+): ApmLockEntry[] | null {
   let parsed: unknown;
   try {
     parsed = parseYaml(raw);
   } catch (cause) {
-    throw new ParseError(`malformed YAML at ${path}`, cause);
+    throw new ParseError(`malformed YAML at ${sourceLabel}`, cause);
   }
   if (parsed === null || parsed === undefined) return null;
   if (typeof parsed !== 'object') {
-    console.warn(`harness apm: ${path} top level is not an object; ignoring`);
+    console.warn(`harness apm: ${sourceLabel} top level is not an object; ignoring`);
     return [];
   }
-  const obj = parsed as Record<string, unknown>;
+  return parseEntries(parsed as Record<string, unknown>, sourceLabel);
+}
+
+function parseEntries(obj: Record<string, unknown>, sourceLabel: string): ApmLockEntry[] {
   const list =
     Array.isArray(obj['packages']) ? obj['packages'] :
     Array.isArray(obj['dependencies']) ? obj['dependencies'] :
@@ -65,7 +82,7 @@ export function readApmLock(
   for (let i = 0; i < list.length; i++) {
     const item = list[i];
     if (item === null || typeof item !== 'object' || Array.isArray(item)) {
-      console.warn(`harness apm: ${path} entry [${i}] is not an object; skipping`);
+      console.warn(`harness apm: ${sourceLabel} entry [${i}] is not an object; skipping`);
       continue;
     }
     const e = item as Record<string, unknown>;
@@ -104,7 +121,7 @@ export function readApmLock(
         repoUrl,
         localPath,
         deployedFiles,
-        path,
+        path: sourceLabel,
         index: i,
       });
       if (synthesized !== null) entries.push(synthesized);
@@ -113,7 +130,7 @@ export function readApmLock(
 
     if (pkg === null || repoUrl === null || resolvedCommit === null || depth === null || deployedFiles === null) {
       console.warn(
-        `harness apm: ${path} entry [${i}] (${pkg ?? '?'}) is missing required field(s); skipping`,
+        `harness apm: ${sourceLabel} entry [${i}] (${pkg ?? '?'}) is missing required field(s); skipping`,
       );
       continue;
     }
