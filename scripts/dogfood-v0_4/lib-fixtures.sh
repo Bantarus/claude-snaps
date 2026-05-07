@@ -74,23 +74,28 @@ JSON
 }
 
 # Baseline + apm.yml + apm install (local-path dep against an APM
-# fixture in $CIP_APM_FIXTURE). Only the project gets a .git;
-# the APM fixture lives elsewhere.
+# fixture in $CIP_APM_FIXTURE). The dependency syntax APM accepts is
+# a list of absolute paths under `dependencies.apm`; that produces
+# `source: local` lockfile entries which v0.4.1 capture-side
+# enrichment recognizes as apm-kind modules.
+#
+# Pre-creates .claude/ so APM auto-target-detection picks "claude"
+# (else it falls back to .github/ and the .claude/ deploy paths
+# the reproducer cares about don't materialize).
 fixture_baseline_with_apm() {
   fixture_baseline_no_apm
   _ensure_apm_fixture
   (
     cd "$FIXTURE_DIR"
+    # baseline already created .claude/ — keep it.
     cat > apm.yml <<APMYML
 name: cip-test-project
-version: 0.0.0
+version: 1.0.0
 dependencies:
   apm:
-    apm-test:
-      source: $CIP_APM_FIXTURE
+    - $CIP_APM_FIXTURE
 APMYML
-    "$APM" install --no-progress >/dev/null 2>&1 || \
-      "$APM" install >/dev/null 2>&1 || true
+    "$APM" install >/dev/null 2>&1
     # Capture so the snapshot reflects the apm-installed state.
     fire_session_start "$FIXTURE_DIR" cip-baseline-apm startup >/dev/null 2>&1 || true
   )
