@@ -27,6 +27,7 @@ source "$HERE/lib-tap.sh"
 source "$HERE/lib-assert.sh"
 source "$HERE/lib-hook-fire.sh"
 source "$HERE/lib-fixtures.sh"
+source "$HERE/lib-blob.sh"
 
 # ---- flags ----
 
@@ -102,10 +103,10 @@ trap _cleanup EXIT
 # Loaded in numeric order. Bash globs sort lexicographically so w10/w11
 # come AFTER w2 — fix by listing explicitly when we add cases beyond W9.
 shopt -s nullglob
-for case_file in "$HERE"/cases/w[0-9].sh; do
+for case_file in "$HERE"/cases/w[0-9]_*.sh; do
   source "$case_file"
 done
-for case_file in "$HERE"/cases/w[1-9][0-9].sh; do
+for case_file in "$HERE"/cases/w[1-9][0-9]_*.sh; do
   source "$case_file"
 done
 shopt -u nullglob
