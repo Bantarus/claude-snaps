@@ -124,20 +124,25 @@ SKILL
   )
 }
 
-# Baseline + a second branch named "experimental" off HEAD.
+# Baseline + at least one snapshot + a second branch named
+# "experimental" off HEAD. Both branches initially point at the same
+# snapshot id; cases that need divergence can fire / mutate / re-fire
+# after switching branches.
 fixture_branched() {
   fixture_baseline_no_apm
   (
     cd "$FIXTURE_DIR"
+    "$HARNESS" snap "branched baseline" >/dev/null
     "$HARNESS" branch experimental >/dev/null
   )
 }
 
-# Baseline + a "v0.1" tag at HEAD.
+# Baseline + at least one snapshot + a "v0.1" tag at HEAD.
 fixture_tagged() {
   fixture_baseline_no_apm
   (
     cd "$FIXTURE_DIR"
+    "$HARNESS" snap "tagged baseline" >/dev/null
     "$HARNESS" tag v0.1 >/dev/null
   )
 }
