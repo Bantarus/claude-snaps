@@ -22,6 +22,57 @@ reset_case_diagnostics() {
   CASE_DIAGNOSTICS=()
 }
 
+# ---- case registry ----
+#
+# cases/w*.sh files call register_case "<W#.# label>" <fn> to enqueue
+# cases. The runner then makes one pass to count (after applying any
+# --filter), emits the plan line, and a second pass to execute.
+
+declare -a REGISTERED_LABELS=()
+declare -a REGISTERED_FNS=()
+
+register_case() {
+  local label=$1 fn=$2
+  REGISTERED_LABELS+=("$label")
+  REGISTERED_FNS+=("$fn")
+}
+
+# Count cases matching the current filter without running anything.
+count_filtered_cases() {
+  local n=0 i
+  for ((i = 0; i < ${#REGISTERED_LABELS[@]}; i++)); do
+    local label=${REGISTERED_LABELS[$i]}
+    if [ -n "$TAP_FILTER" ] && ! [[ "$label" =~ $TAP_FILTER ]]; then
+      continue
+    fi
+    n=$((n + 1))
+  done
+  printf '%d\n' "$n"
+}
+
+# Iterate the registered queue, calling run_case for each. Honors
+# TAP_FILTER; honors workflow-grouping (emits "# Workflow ..." when
+# the W-prefix changes between consecutive cases).
+run_registered_cases() {
+  local last_workflow=""
+  local i
+  for ((i = 0; i < ${#REGISTERED_LABELS[@]}; i++)); do
+    local label=${REGISTERED_LABELS[$i]}
+    local fn=${REGISTERED_FNS[$i]}
+    if [ -n "$TAP_FILTER" ] && ! [[ "$label" =~ $TAP_FILTER ]]; then
+      continue
+    fi
+    # Workflow header: emit when the W-prefix (e.g. "W1") changes.
+    local wf
+    wf=${label%%.*}
+    if [ "$wf" != "$last_workflow" ] && [ "$TAP_LIST_ONLY" -ne 1 ]; then
+      tap_workflow_header "$wf"
+      last_workflow=$wf
+    fi
+    run_case "$label" "$fn"
+  done
+}
+
 tap_version() {
   printf 'TAP version 14\n'
 }
