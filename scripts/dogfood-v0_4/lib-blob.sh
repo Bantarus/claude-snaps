@@ -74,3 +74,40 @@ count_snapshot_blobs() {
   local cwd=$1
   find "$cwd/.harness/snapshots" -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' '
 }
+
+# Trajectory line shape (from `harness sessions <sid>`):
+#   "  HH:MM:SS  <event_kind> (<source>)  → <short_id> (<kind>)"  (composition changed)
+#   "  HH:MM:SS  <event_kind> (<source>)  = <short_id>"           (composition unchanged)
+# Both are attribution events. Helpers below match `[→=]`.
+
+# Filter trajectory output to only the event lines.
+_trajectory_lines() {
+  local cwd=$1 sid=$2
+  ( cd "$cwd" && "$HARNESS" sessions "$sid" 2>/dev/null ) \
+    | grep -E '[→=] [0-9a-f]+' \
+    || true
+}
+
+# Count attribution events.
+trajectory_count() {
+  _trajectory_lines "$1" "$2" | grep -c '' || true
+}
+
+# List the source values, in order, one per line. Empty string for
+# events without a source (user_prompt has none).
+trajectory_sources() {
+  _trajectory_lines "$1" "$2" \
+    | sed -E 's/.*\(([^)]+)\)[[:space:]]+[→=].*/\1/'
+}
+
+# List the event_kinds, in order.
+trajectory_kinds() {
+  _trajectory_lines "$1" "$2" \
+    | sed -E 's/^[[:space:]]*[0-9:]+[[:space:]]+([a-z_]+).*/\1/'
+}
+
+# List the short snapshot ids, in order (one per line).
+trajectory_snapshot_ids_short() {
+  _trajectory_lines "$1" "$2" \
+    | sed -E 's/.*[→=][[:space:]]+([0-9a-f]+).*/\1/'
+}
