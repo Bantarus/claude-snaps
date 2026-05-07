@@ -1,0 +1,76 @@
+name: CI playbook
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'packages/**'
+      - 'spec/**'
+      - 'scripts/**'
+      - '.github/workflows/ci-playbook.yml'
+  workflow_dispatch:
+
+# Avoid running redundant playbook jobs for the same ref.
+concurrency:
+  group: ci-playbook-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci-playbook:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      # jq is a documented runtime dep of the playbook (lib-hook-fire.sh,
+      # lib-assert.sh JSON helpers). ubuntu-latest images usually include
+      # it, but install explicitly so the dependency isn't implicit.
+      - name: Install jq
+        run: |
+          if ! command -v jq >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y jq
+          fi
+          jq --version
+
+      - name: Install APM
+        run: |
+          curl -sSL https://aka.ms/apm-unix | sh
+          # The installer drops apm into ~/.local/bin per current upstream.
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Verify apm on PATH
+        run: |
+          which apm
+          apm --version
+
+      - name: Install + build packages
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm -r build
+
+      - name: Run CI playbook
+        env:
+          # Use a known scratch path so the failure-state upload below
+          # can grab it. (Default is mktemp under TMPDIR.)
+          CIP_SCRATCH: /tmp/cip-scratch
+        run: |
+          bash scripts/dogfood-v0_4/ci-playbook.sh --leave-state
+
+      - name: Upload scratch state on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cip-scratch-${{ github.run_id }}
+          path: /tmp/cip-scratch
+          if-no-files-found: ignore
+          retention-days: 7
