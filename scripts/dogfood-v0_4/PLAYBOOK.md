@@ -1,5 +1,12 @@
 # v0.4 observation playbook
 
+> **Deprecated as a verification channel.** Behavioral contracts are
+> now asserted by [`ci-playbook.sh`](README.md) (71 cases, TAP 14
+> output, runs in CI). This document is retained as a tutorial /
+> onboarding read — it walks the v0.4.0+v0.4.1 contract by hand so a
+> new contributor can build a mental model. For regression-catching,
+> always trust CI.
+
 A live walkthrough that exercises every load-bearing case the v0.4.0
 + v0.4.1 cycle introduced and surfaces the edge cases that have
 realistic real-use triggers. Designed to be **read top-to-bottom while
