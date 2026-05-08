@@ -391,17 +391,15 @@ Plus an **L2** local-observe case (real `claude -p` end-to-end):
 
 Each step ends in a verifiable state. Pause and commit between steps.
 
-1. **Verify open questions** (~1 hour). Empirically check:
-   - Does Claude Code 2.1.131 emit a `SessionEnd` hook event?
-   - What's the canonical path layout for `~/.claude/projects/<encoded>`?
-   - Does the JSONL `version` field match `claude --version` exactly,
-     or is it a different shape?
-   - Are there any other interesting fields in the transcript we
-     should surface (e.g., `entrypoint`, `gitBranch`)?
-
-   File findings inline before writing any spec text. Per
-   `memory/feedback_spec_vs_reality.md` (4th confirmation, established
-   discipline): probe before pinning.
+1. **Re-verify drift detectors are still green** (~10 minutes).
+   Run `bash scripts/dogfood-v0_4/local-observe.sh --filter '^L2'`
+   and `bash scripts/dogfood-v0_4/ci-playbook.sh --filter '^W2\.(9|10)'`.
+   All five cases (L2.1, L2.2, L2.3, W2.9, W2.10) MUST be green
+   before proceeding. If any turns red, the host has drifted since
+   2026-05-08 — re-probe via the Verified Pins recipe and update
+   the spec/case before writing any code. This step replaces the
+   original draft's "verify open questions" — the empirical work
+   was done prospectively (see Verified Pins above).
 
 2. **Spec amendments** (~half day). Author §10, amend §2.1 + §1.1.
    Run schema-agreement gate; expect it to fail with the new column;
@@ -466,42 +464,154 @@ Each step ends in a verifiable state. Pause and commit between steps.
     and the "transcript-reading is now permitted (whitelist-only)"
     architectural decision. Commit.
 
-## Open questions to surface, NOT settle
+## Verified pins (Claude Code 2.1.131 prospective probe, 2026-05-08)
 
-1. **SessionEnd hook.** Does Claude Code 2.1.131 emit one? If yes,
-   wiring auto-ingest is trivial. If no, defer auto-ingest to v0.5.x
-   and ship v0.5.0 with manual `harness ingest-session` only. Surface
-   the answer empirically (try wiring a tee hook on `SessionEnd` and
-   check if it fires).
+The original draft of this prompt left six questions for the
+implementer to verify in step 1. Five were probed empirically before
+this prompt was finalized; the v0.4.2 spec-vs-reality discipline
+applied prospectively (see memory/feedback_spec_vs_reality.md, 4th
+recurrence). Each answer is locked by a drift-detector test case
+that turns red when the host changes shape, BEFORE someone burns
+days against a stale contract.
 
-2. **In-progress sessions.** A JSONL is being written WHILE the
-   session is live. Should `harness ingest-session` refuse to ingest
-   the currently-active session, or read whatever's there? Refusal
-   is safer (no race) but less useful. Recommendation: read; the
-   ingest is idempotent so re-running picks up new turns. Verify no
-   crash on truncated final line.
+### Pin 1 — Hook event inventory (was: "Does SessionEnd fire?")
 
-3. **Encoded project dir name.** `~/.claude/projects/<encoded>` uses
-   path encoding (slashes → dashes). Document the exact rule the
-   ingester relies on. Current observation: `~/DEV/claude-snaps`
-   becomes `-home-bantarus-DEV-claude-snaps`. Verify against multi-arg
-   paths and unicode paths before pinning.
+A single `claude -p` emits FOUR hook events in order:
 
-4. **`attributionSkill` correlation with attribution events.** The
-   JSONL records which skill was active per turn. We could correlate
-   this with our attribution events (event_kind=user_prompt rows
-   that triggered skill resolution). v0.5.x candidate; not in
-   v0.5.0 scope.
+```
+SessionStart → UserPromptSubmit → Stop → SessionEnd
+```
 
-5. **`sessions <id>` augmentation.** If turn_metrics exists for a
-   session, should `harness sessions <id>` show economic data
-   inline? Recommendation: yes, after the trajectory list, with a
-   one-line "Cost summary" footer. v0.5.0 nice-to-have; defer to
-   v0.5.x if it complicates the diff.
+Both Stop and SessionEnd were undocumented in v0.4.x. Their stdin
+payloads:
 
-6. **Multi-attempt query semantics.** `harness session-cost --all` on
-   a project with 1000 sessions could return a lot. Add `--limit`
-   from day one. Default to top-N-by-cost? Surface the question.
+```
+SessionEnd (5 fields):
+  session_id, transcript_path, cwd, hook_event_name, reason
+
+Stop (7 fields):
+  session_id, transcript_path, cwd, hook_event_name,
+  permission_mode, stop_hook_active, last_assistant_message
+```
+
+**Auto-ingest via SessionEnd is in scope for v0.5.0**, NOT deferred.
+Wire a SessionEnd hook entry in `harness install-hook` that fires
+`harness ingest-session <session_id>` post-hoc.
+
+`last_assistant_message` carries Claude's response text — same
+privacy class as `prompt`. Add it to the §10.2 forbidden whitelist:
+
+> §10.2 forbidden additions: `last_assistant_message` (Stop event),
+> `reason` MAY be stored (low-cardinality enum value, not content).
+
+The current v0.4 hook silently coerces unknown event names
+(SessionEnd, Stop, PreCompact) to `SessionStart` (see
+`packages/hook/src/args.ts:131-136`). Step 5 of v0.5 implementation
+must extend `HookEventName` to include `SessionEnd` and add a
+`session_end` event_kind to the attribution schema.
+
+**Drift detectors:**
+- `cases/w2_hook_firing.sh` W2.9 — synthesized SessionEnd payload
+  → hook tolerates it (current v0.4 coercion locked)
+- `local_cases/l2_v0_5_pre_flight.sh` L2.1 — real `claude -p`
+  emits exactly the 4 expected events in order
+
+### Pin 2 — In-progress JSONL parse safety
+
+Linux append() is line-atomic up to PIPE_BUF (4KB); Claude Code is
+a single-writer per session. The only realistic in-progress shape
+is "N complete lines + 1 trailing partial." The parser strategy:
+
+1. Read each `\n`-terminated line.
+2. Try `JSON.parse()`; on success emit; on failure silently skip.
+3. Drop any trailing partial (unterminated) line.
+
+No file lock needed. Idempotent re-runs pick up new turns via the
+existing `MAX(turn_index)` lookup.
+
+**Drift detector:** `cases/w2_hook_firing.sh` W2.10 — synthesized
+3-complete-records + 1-truncated-line + 1-corrupt-middle-line
+fixture; asserts parser yields the expected count and never leaks
+partial-line bytes. Helpers live in `scripts/dogfood-v0_4/lib-jsonl.sh`
+(`parse_jsonl_complete_lines`, `count_complete_jsonl_lines`); the
+v0.5 ingester should match this strategy.
+
+### Pin 3 — Project-dir encoding rule
+
+Claude Code maps `cwd` to `~/.claude/projects/<encoded>/` by:
+
+```
+encode(path) = each char ∈ [a-zA-Z0-9] kept; everything else → '-'
+                no collapsing of consecutive dashes
+                operates per-character (multi-byte UTF-8 chars
+                  become one '-' each, NOT one '-' per byte)
+```
+
+Example: `/tmp/q3d-üñîcödé` → `-tmp-q3d----c-d-` (verified).
+
+**Drift detector:** `local_cases/l2_v0_5_pre_flight.sh` L2.2 —
+runs `claude -p` from cwds with simple/spaces/dots-class chars and
+asserts the predicted encoded directory exists.
+
+**Reference implementation** (v0.5 ingester):
+
+```typescript
+function encodeProjectDir(absPath: string): string {
+  return absPath.replace(/[^a-zA-Z0-9]/g, '-');
+}
+```
+
+### Pin 4 — `attributionSkill` semantics
+
+Per-turn JSONL field on `assistant` records. NULL when no skill
+activated for that turn. Populated with the skill's name (e.g.
+`"recall"`) when one ran. Correlatable with attribution events via
+`(session_id, observed_at)` range matching: a `user_prompt` event
+at time T1 corresponds to assistant turns in [T1, T2) where T2 is
+the next `user_prompt`; their `attributionSkill` values describe
+which skills were activated for that prompt's response.
+
+Capture as proposed: optional `attribution_skill TEXT` column on
+`turn_metrics`; NULL when absent.
+
+**Bonus pin** from the same probe: `version` (the Claude Code
+version) is also per-turn on the JSONL, not per-session. We saw
+`2.1.131` mid-session despite `claude --version` reporting `2.1.128`
+— claude auto-updates between turns. The `claudeCodeVersion` field
+on the snapshot blob (per the §2.1 amendment) reflects the FIRST
+hook fire's version, which is the right semantics: snapshots are
+immutable and represent host identity at composition time.
+
+**Drift detector:** `local_cases/l2_v0_5_pre_flight.sh` L2.3 —
+runs `claude -p --tools ""` (no skill triggered), asserts ALL
+assistant turns have `attributionSkill: null`.
+
+### Pin 5 — `sessions <id>` augmentation (settled)
+
+Yes, augment. When `turn_metrics` has rows for the session,
+`harness sessions <id>` appends a one-line "Cost summary" footer
+after the existing trajectory output:
+
+```
+Session <id> trajectory:
+  HH:MM:SS  session_start (startup)  → <id> (init)
+  HH:MM:SS  user_prompt              = <id>
+
+Spanned 1 snapshot over 0s.
+Cost: 47 turns, 1.3M tokens (1.2M cache-read, 24K out), 8 tools used.
+```
+
+When no rows, render unchanged (non-breaking). v0.5.0 in scope.
+
+### Pin 6 — `session-cost --all` defaults (settled)
+
+`harness session-cost --all` defaults: **unlimited rows, ordered by
+total tokens DESC**. No silent default-limit (surprises users).
+`--limit N` flag for "top-N-by-cost". `--csv` for piping to
+spreadsheets.
+
+A user with 1000 sessions and no `--limit` gets all 1000. They can
+pipe `| head -50` if they want; the CLI does not second-guess.
 
 ## What's NOT in scope
 
