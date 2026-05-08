@@ -140,8 +140,8 @@ Optional top-level fields:
 | Field | Type | Notes |
 |---|---|---|
 | `formatVersion` | string | Default `"0.3"` if absent. See §9. |
-| `model` | string \| `null` | Model id reported by the host on SessionStart / UserPromptSubmit (e.g. `"claude-opus-4-7"`). Optional; pre-amendment snapshots and non-hook writers omit it. Pass-through; not normalized. |
-| `permissionMode` | string \| `null` | Permission mode reported by the host on SessionStart / UserPromptSubmit (e.g. `"default"`, `"plan"`, `"acceptEdits"`). Optional; pre-amendment snapshots and non-hook writers omit it. Pass-through; not normalized. |
+| `model` | string \| `null` | Model id reported by the host (e.g. `"claude-opus-4-7"`). Optional; pre-amendment snapshots, non-hook writers, AND snapshots produced by the hook against Claude Code 2.1.128 all leave it `null` (the host does not send `model` in the hook payload — see [hooks.md §1.1](hooks.md#11-channel-a--stdin-json-primary-claude-code-native)). Pass-through; not normalized. |
+| `permissionMode` | string \| `null` | Permission mode reported by the host (e.g. `"default"`, `"plan"`, `"acceptEdits"`). Optional; pre-amendment snapshots and non-hook writers omit it. Pass-through; not normalized. **Reality note (Claude Code 2.1.128):** the host sends `permission_mode` only on UserPromptSubmit; combined with the §2.4 hot-path that does not re-walk on the second fire of a session, snapshots written by the hook in current real-world deployments have `permissionMode = null`. See "First-observation-wins" below. |
 | `apmLockHash` | string \| `null` | `sha256:<64-hex>` of `apm.lock.yaml` bytes; see [apm-integration.md](apm-integration.md). |
 | `apmLockfile` | string \| `null` | Full text content of `apm.lock.yaml` at capture time. Null when no lockfile. Captured to enable self-contained reproduction (§6.1) without requiring the user's project to be at the snapshot's `codePin`. Added v0.4.0. |
 | `author` | string \| `null` | Free-form (e.g. email or username). |
@@ -152,6 +152,21 @@ The hook writes them through to the blob unchanged. Both are optional —
 older hosts, the CLI testing path, and writers other than the hook all
 leave them absent. A reader MUST tolerate either presence or absence and
 MUST preserve them on round-trip per §9.2.
+
+**First-observation-wins.** When the host sends differing values for
+`model` or `permissionMode` across consecutive events in the same
+session, the snapshot reflects the value at the **first** observation
+that wrote it; subsequent events with different values do NOT update
+the snapshot. This is consistent with snapshots being composition
+observations: per-session context is recorded once on the writing
+event, not amended across the lifetime of the session. The §2.4
+hot-path optimization (which appends an attribution row but does not
+re-walk on subsequent fires of an unchanged composition) is the
+mechanism; the immutability invariant in §3 is the reason. Tools that
+need session-state-over-time (e.g. permission-mode changes within a
+session) MUST consult attribution events directly, not snapshot
+fields. A potential v0.5+ enhancement is a `permission_mode` column
+on attribution rows; deferred until a real use case surfaces.
 
 **Removed in v0.2.0:** `sessionId`. Snapshots are now session-independent
 — the same harness composition observed by two different sessions yields

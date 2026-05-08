@@ -38,23 +38,69 @@ provide any combination.
 
 Claude Code (and similar hosts) write a single JSON object to the hook
 binary's stdin and close the stream. The hook MUST read fd 0 to EOF and
-parse the result as JSON. The schema:
+parse the result as JSON. Field names are **snake_case** (Claude Code's
+convention). Conforming hosts SHOULD pass at least `session_id`,
+`cwd`, and `hook_event_name`.
+
+#### Per-event payload (verified against Claude Code 2.1.128)
+
+The host's payload **differs by event**. Earlier drafts of this spec
+listed a single combined schema; that was aspirational. The contract
+below records what real Claude Code actually sends. Future Claude Code
+versions MAY add fields; the hook MUST tolerate additional fields not
+listed here (read what's known, ignore the rest) and MUST NOT fail on
+fields documented as event-specific (e.g. `permission_mode` absent on
+SessionStart is normal, not an error).
+
+**SessionStart payload** (5 fields):
 
 ```json
 {
-  "session_id":       "<string, required>",
-  "cwd":              "<absolute path, required>",
-  "hook_event_name":  "SessionStart | UserPromptSubmit",
-  "transcript_path":  "<absolute path to session JSONL, optional>",
-  "source":           "startup | resume | clear | compact (SessionStart only)",
-  "model":            "<model id, optional>",
-  "permission_mode":  "<default | plan | acceptEdits | bypassPermissions, optional>",
-  "agent_type":       "<string, only when --agent <name> was used>"
+  "session_id":      "<uuid v4 string>",
+  "transcript_path": "<absolute path to session JSONL>",
+  "cwd":             "<absolute path>",
+  "hook_event_name": "SessionStart",
+  "source":          "startup | resume | clear | compact"
 }
 ```
 
-Field names are **snake_case** (Claude Code's convention). Conforming
-hosts SHOULD pass at least `session_id`, `cwd`, and `hook_event_name`.
+**UserPromptSubmit payload** (6 fields):
+
+```json
+{
+  "session_id":      "<uuid v4 string>",
+  "transcript_path": "<absolute path to session JSONL>",
+  "cwd":             "<absolute path>",
+  "hook_event_name": "UserPromptSubmit",
+  "permission_mode": "default | plan | acceptEdits | bypassPermissions",
+  "prompt":          "<the user's literal prompt text>"
+}
+```
+
+#### Notable absences and asymmetries
+
+- **`model` is not sent by Claude Code 2.1.128** in either event. The
+  spec previously listed it as an optional field; the hook MUST still
+  capture it from stdin if a future host version begins sending it,
+  but real-world snapshots produced today have `model = null`.
+- **`permission_mode` is sent only by UserPromptSubmit**, not by
+  SessionStart. Combined with the §2.4 hot-path optimization (which
+  does not re-walk on the second event in a session), this means
+  `permissionMode` on snapshots produced by the hook against current
+  Claude Code is effectively never populated — see
+  [format.md §2.1](format.md#21-required-and-optional-fields) for the
+  first-observation-wins consequence.
+- **`prompt` is sent on UserPromptSubmit** but is currently
+  observed-and-ignored by harness. Capturing prompt text would
+  introduce privacy and storage concerns out of scope for v0.4.x;
+  any future capture must be opt-in and surface separately
+  (potential v0.6+ design).
+- **`agent_type` is NOT observed in 2.1.128** despite earlier drafts
+  documenting it. Removed from the schema until a host version is
+  observed sending it.
+
+#### Hook responsibilities
+
 The hook MUST distinguish events via `hook_event_name`:
 
 - `"SessionStart"` → append a `session_start` attribution; copy
@@ -66,13 +112,12 @@ The hook MUST distinguish events via `hook_event_name`:
 The hook MUST capture `model` and `permission_mode` when present and
 write them through to any newly-written snapshot blob's `model` /
 `permissionMode` fields verbatim (see
-[format.md §2.1](format.md#21-required-and-optional-fields)) — both are
-session-level context that materially changes what `harness diff` can
-explain about behavioral drift between snapshots, and they cannot be
-backfilled because snapshots are immutable. When the hot-path
-optimization (§2.4) skips writing a new snapshot, `model` and
-`permission_mode` are not re-applied to the existing snapshot. Other
-unknown fields are observed-and-ignored in v0.3.
+[format.md §2.1](format.md#21-required-and-optional-fields)). When the
+hot-path optimization (§2.4) skips writing a new snapshot, `model`
+and `permission_mode` are not re-applied to the existing snapshot;
+this is intentional (snapshots are immutable per §2 and represent
+composition, not session-state-over-time). The first-observation
+value wins. Other unknown fields are observed-and-ignored.
 
 ### 1.2 Channel B — CLI flags (secondary, testing)
 
