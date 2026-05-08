@@ -28,6 +28,45 @@ Self-gates (verify the playbook itself works):
 bash scripts/dogfood-v0_4/cip-self-test.sh
 ```
 
+## Local end-to-end (real Claude Code, no API key)
+
+`local-observe.sh` is a separate runner that drives **real** Claude
+Code headless sessions (`claude -p`) instead of synthesizing hook
+payloads. Same assertion library, same fixtures — different harness.
+Use it locally to catch emergent properties (real session_id format,
+real `source=startup`/`resume` semantics, real `transcript_path`
+bytes, model + permission_mode passthrough) that synthesis can't
+exercise.
+
+```bash
+bash scripts/dogfood-v0_4/local-observe.sh --smoke   # plumbing only (1 case)
+bash scripts/dogfood-v0_4/local-observe.sh           # full local pass
+bash scripts/dogfood-v0_4/local-observe.sh --filter '^L1\.2'   # one case
+```
+
+Auth: uses your locally-logged-in `claude` CLI (claude.ai
+subscription). **No Anthropic API key required.** Per-case cost is
+~tens of subscription tokens; each invocation pins
+`--model claude-haiku-4-5-20251001` and `--tools ""` to keep it
+minimal. Override via env: `LOCAL_MODEL=...` `LOCAL_PERM_MODE=...`.
+
+CI safety: if `claude` is not on PATH, the runner exits 0 with a
+skip notice — safe to call from `.github/workflows/` even though
+GHA runners don't have `claude` available.
+
+local-observe.sh and ci-playbook.sh are **complementary**, not
+alternatives:
+
+| | ci-playbook.sh | local-observe.sh |
+|---|---|---|
+| Drives | synthesized hook payloads | real `claude -p` sessions |
+| Auth | none | claude.ai subscription |
+| Cost | free | subscription tokens |
+| Speed | fast (seconds) | slow (one network round-trip per case) |
+| Determinism | full | partial (Claude's output varies) |
+| Runs in CI | yes (gating) | no (skipped on missing `claude`) |
+| Catches | contract regressions | emergent integration drift |
+
 ## Runtime dependencies
 
 Required on the host running `ci-playbook.sh`:
@@ -186,7 +225,8 @@ the case to match the revert.
 scripts/dogfood-v0_4/
 ├── README.md               ← this file (CI-runnable; the verification channel)
 ├── PLAYBOOK.md             ← deprecated; kept as tutorial / onboarding doc
-├── ci-playbook.sh          ← runner: source cases/, count, plan, run, summarize
+├── ci-playbook.sh          ← synthesized runner (deterministic, free; runs in CI)
+├── local-observe.sh        ← real-Claude-Code runner (subscription; local-only)
 ├── cip-self-test.sh        ← self-gates (CIP1, CIP3-CIP6)
 ├── lib.sh                  ← shared env (HARNESS, HARNESS_HOOK, V04_DIR)
 ├── lib-tap.sh              ← TAP 14 emit + case registry + run_case
@@ -197,18 +237,22 @@ scripts/dogfood-v0_4/
 ├── reset.sh                ← live-walkthrough setup (PLAYBOOK.md only)
 ├── setup-apm-fixture.sh    ← live-walkthrough APM fixture (PLAYBOOK.md only)
 ├── audit.sh                ← live-walkthrough audit script (PLAYBOOK.md only)
-└── cases/
-    ├── w1_cold_start.sh        (5 cases)
-    ├── w2_hook_firing.sh       (7 cases)
-    ├── w3_snap.sh              (5 cases)
-    ├── w4_queries.sh          (10 cases)
-    ├── w5_refs.sh             (10 cases)
-    ├── w6_reproduce.sh        (12 cases)  ← load-bearing
-    ├── w7_recovery.sh          (6 cases)
-    ├── w8_install_hook.sh      (5 cases)
-    ├── w9_apm.sh               (4 cases)
-    ├── w10_dag.sh              (3 cases)
-    └── w11_format_compat.sh    (4 cases)
+├── cases/                  ← synthesized cases (W1–W11) for ci-playbook.sh
+│   ├── w1_cold_start.sh        (5 cases)
+│   ├── w2_hook_firing.sh       (7 cases)
+│   ├── w3_snap.sh              (5 cases)
+│   ├── w4_queries.sh          (10 cases)
+│   ├── w5_refs.sh             (10 cases)
+│   ├── w6_reproduce.sh        (12 cases)  ← load-bearing
+│   ├── w7_recovery.sh          (6 cases)
+│   ├── w8_install_hook.sh      (5 cases)
+│   ├── w9_apm.sh               (4 cases)
+│   ├── w10_dag.sh              (3 cases)
+│   └── w11_format_compat.sh    (4 cases)
+└── local_cases/            ← real-Claude cases (L0–Ln) for local-observe.sh
+    ├── l0_smoke.sh             (1 case — plumbing check)
+    └── l1_basic.sh             (4 cases — startup/resume/model/dedup)
 ```
 
-Total: **71 cases** across 11 workflows.
+CI playbook: **71 cases** across 11 workflows.
+Local observe: **5 cases** (1 smoke + 4 real-session).
