@@ -142,31 +142,33 @@ Optional top-level fields:
 | `formatVersion` | string | Default `"0.3"` if absent. See §9. |
 | `model` | string \| `null` | Model id reported by the host (e.g. `"claude-opus-4-7"`). Optional; pre-amendment snapshots, non-hook writers, AND snapshots produced by the hook against Claude Code 2.1.128 all leave it `null` (the host does not send `model` in the hook payload — see [hooks.md §1.1](hooks.md#11-channel-a--stdin-json-primary-claude-code-native)). Pass-through; not normalized. |
 | `permissionMode` | string \| `null` | Permission mode reported by the host (e.g. `"default"`, `"plan"`, `"acceptEdits"`). Optional; pre-amendment snapshots and non-hook writers omit it. Pass-through; not normalized. **Reality note (Claude Code 2.1.128):** the host sends `permission_mode` only on UserPromptSubmit; combined with the §2.4 hot-path that does not re-walk on the second fire of a session, snapshots written by the hook in current real-world deployments have `permissionMode = null`. See "First-observation-wins" below. |
+| `claudeCodeVersion` | string \| `null` | Claude Code CLI version observed at the snapshot's first hook fire (e.g. `"2.1.131"`). Source: `version` field in `transcript_path` JSONL (canonical, per-turn) OR `claude --version` fallback when no transcript is readable. Optional; pre-v0.5 snapshots and non-hook writers omit it. First-observation-wins per the same doctrine as `model` / `permissionMode` — Claude Code auto-updates between turns, so a long session can span multiple versions; the snapshot pins the version at composition time. Added v0.5.0. |
 | `apmLockHash` | string \| `null` | `sha256:<64-hex>` of `apm.lock.yaml` bytes; see [apm-integration.md](apm-integration.md). |
 | `apmLockfile` | string \| `null` | Full text content of `apm.lock.yaml` at capture time. Null when no lockfile. Captured to enable self-contained reproduction (§6.1) without requiring the user's project to be at the snapshot's `codePin`. Added v0.4.0. |
 | `author` | string \| `null` | Free-form (e.g. email or username). |
 
-`model` and `permissionMode` are session-level context shipped in the
-hook stdin payload (see [hooks.md §1.1](hooks.md#11-channel-a--stdin-json-primary-claude-code-native)).
-The hook writes them through to the blob unchanged. Both are optional —
+`model`, `permissionMode`, and `claudeCodeVersion` are session-level
+context shipped in the hook stdin payload OR read from the transcript
+JSONL (see [hooks.md §1.1](hooks.md#11-channel-a--stdin-json-primary-claude-code-native)).
+The hook writes them through to the blob unchanged. All three are optional —
 older hosts, the CLI testing path, and writers other than the hook all
 leave them absent. A reader MUST tolerate either presence or absence and
 MUST preserve them on round-trip per §9.2.
 
 **First-observation-wins.** When the host sends differing values for
-`model` or `permissionMode` across consecutive events in the same
-session, the snapshot reflects the value at the **first** observation
-that wrote it; subsequent events with different values do NOT update
-the snapshot. This is consistent with snapshots being composition
-observations: per-session context is recorded once on the writing
-event, not amended across the lifetime of the session. The §2.4
-hot-path optimization (which appends an attribution row but does not
-re-walk on subsequent fires of an unchanged composition) is the
-mechanism; the immutability invariant in §3 is the reason. Tools that
-need session-state-over-time (e.g. permission-mode changes within a
-session) MUST consult attribution events directly, not snapshot
-fields. A potential v0.5+ enhancement is a `permission_mode` column
-on attribution rows; deferred until a real use case surfaces.
+`model`, `permissionMode`, or `claudeCodeVersion` across consecutive
+events in the same session, the snapshot reflects the value at the
+**first** observation that wrote it; subsequent events with different
+values do NOT update the snapshot. This is consistent with snapshots
+being composition observations: per-session context is recorded once
+on the writing event, not amended across the lifetime of the session.
+The §2.4 hot-path optimization (which appends an attribution row but
+does not re-walk on subsequent fires of an unchanged composition) is
+the mechanism; the immutability invariant in §3 is the reason. Tools
+that need session-state-over-time (e.g. permission-mode changes within
+a session, or Claude Code auto-updating mid-session) MUST consult
+attribution events or `turn_metrics` (§10) directly, not snapshot
+fields.
 
 **Removed in v0.2.0:** `sessionId`. Snapshots are now session-independent
 — the same harness composition observed by two different sessions yields
@@ -191,6 +193,16 @@ as the cheap equality probe used by composition-change detection
 canonical bytes (§3.1); a snapshot with a different `apmLockfile`
 content is a different snapshot. v0.3.x snapshots are read-compatible
 with `apmLockfile` absent (treated as `null`).
+
+**Added in v0.5.0:** `claudeCodeVersion`. Captures the Claude Code
+CLI version observed at the snapshot's first hook fire — host
+identity at composition time, not composition itself. Excluded from
+canonical bytes (§3.1) so the same harness composition observed by
+two different Claude Code versions yields the same snapshot id;
+the version difference is observed in attribution rows and (for
+fine-grained per-turn data) in `turn_metrics` (§10). v0.4.x
+snapshots are read-compatible with `claudeCodeVersion` absent
+(treated as `null`); see §9.9.
 
 **Removed in v0.3.1:** `version` and the `tag` value of `kind`.
 Snapshots represent composition observations, period; promotion
@@ -503,6 +515,7 @@ bytes (i.e. removed from `snapshot_for_hashing` before serialization):
 | `codePin` | Project's git sha at observation time; varies independently of harness composition. |
 | `model` | Claude Code invocation context; not part of the captured `.claude/` state. |
 | `permissionMode` | Claude Code invocation context; not part of the captured `.claude/` state. |
+| `claudeCodeVersion` | Host CLI version at observation time; varies as Claude Code auto-updates between turns. Excluded so the same composition observed across version bumps still hashes the same. |
 
 All other fields participate in canonical bytes derivation, including:
 
@@ -1090,8 +1103,10 @@ observed_at, event_kind)` and atomically update `lineage.sqlite`.
 
 ### 9.1 Spec versioning
 
-This document is `0.4.0`. Snapshot blobs MAY include `formatVersion`. If
-absent, treat as `"0.4"` (the MAJOR.MINOR family).
+This document is `0.5.0`. Snapshot blobs MAY include `formatVersion`. If
+absent, treat as `"0.5"` (the MAJOR.MINOR family) when reading a blob
+written by a v0.5+ writer; older blobs that omit the field are read as
+their producer's family per §9.9.
 
 | Reader sees | Reader behavior |
 |---|---|
@@ -1184,12 +1199,17 @@ the relevant section, and a `compat-<topic>/` example fixture exercising
 the present-and-populated case. The `harness-spec-amend` skill in
 `.claude/skills/` codifies the workflow.
 
-### 9.4 What v0.4 is expected to add
+### 9.4 What v0.5+ is expected to add
 
-Non-normative; recorded for orientation only.
+Non-normative; recorded for orientation only. v0.5.0 itself adds
+`claudeCodeVersion` and the `turn_metrics` table (§9.9 + §10);
+the items below are the v0.5.x / v0.6+ candidates.
 
 - Additional hook events: `PreCompact`, `SessionEnd`, `ConfigChange`.
-  Each gains a corresponding attribution `eventKind` per §2.7.
+  v0.5.0 wires `SessionEnd` for auto-ingestion (the hook's only new
+  observation is the event-name itself plus the optional
+  low-cardinality `reason`; payload contract locked by W2.9).
+  `PreCompact` and `ConfigChange` remain candidates for v0.5.x.
 - Storing local-source module file content inside the snapshot blob
   (or as side-blobs) so `kind: "local"` reproduction is byte-exact.
   v0.4.0's reproducer (§6.1) reports local-source modules without
@@ -1384,3 +1404,215 @@ unchanged in v0.4.0. The vector's input snapshot does not carry
 production for an absent field is identical to v0.3.1 byte production.
 A new fixture exercising the present-and-populated case lives at
 `spec/examples/solo-with-apm-lockfile/` (added in v0.4.0).
+
+### 9.9 v0.4.x → v0.5.0: `claudeCodeVersion` and session metrics
+
+v0.5.0 adds one optional snapshot field (`claudeCodeVersion`, §2.1),
+one new SQLite table (`turn_metrics`, §10.1) populated by the new
+`harness ingest-session` command, and a narrowly-scoped consumer of
+`transcript_path` (the per-session JSONL Claude Code writes). The
+hot-path hook is unchanged. v0.5.0 readers tolerate v0.4.x snapshots
+unchanged (the new field is null on them); v0.4.x readers preserve
+`claudeCodeVersion` as an unknown top-level field per §9.2.
+
+**Why this is a minor bump (per §9.3):**
+
+- The new field is **optional**. v0.4.x readers preserve it on
+  round-trip and ignore its semantics.
+- No existing field changed type, name, or required status.
+- No enum value was added or removed.
+- `claudeCodeVersion` is excluded from canonical bytes (§3.1), so
+  the snapshot id derivation rule for an existing v0.4.x blob is
+  unchanged: same composition → same id, regardless of the new
+  field's presence.
+
+**The schema migration (`spec/schema/007_session_metrics.sql`):**
+
+1. Adds `claude_code_version TEXT` column to `snapshots` (nullable).
+2. Creates `turn_metrics` table per §10.1.
+3. Bumps `_schema.version` to 7.
+
+No data migration is needed for existing v0.4.x rows. The
+`turn_metrics` table starts empty; rows are populated only by
+`harness ingest-session` against transcripts that exist on the host.
+
+**Reading v0.4.x snapshots in v0.5.0:** Fully compatible.
+`claudeCodeVersion` is null; queries against `turn_metrics` return
+zero rows for sessions whose transcripts haven't been ingested.
+
+**Reading v0.5.0 snapshots in v0.4.x:** Per §9.2, v0.4.x readers
+preserve `claudeCodeVersion` as an unknown top-level field. They
+cannot query session metrics (the table doesn't exist in their
+schema), but they can render lineage and diffs.
+
+**Test vector continuity:** `spec/test-vectors/canonical-501.bin`
+is unchanged in v0.5.0. Because `claudeCodeVersion` is excluded
+from canonical bytes (§3.1), a v0.4.x blob and the same blob with
+a `claudeCodeVersion` value added produce identical canonical
+bytes — and identical snapshot ids. A new test vector exercising
+the present-and-populated case is added in v0.5.0.
+
+**No automated migration of pre-v0.5 sessions.** Per the project's
+standing rule (memory `feedback_no_v2_to_v3_migration.md`), no
+backfill is provided. Sessions whose hooks fired into harness
+before v0.5.0 do not get retroactive `turn_metrics` rows automatically;
+the user can run `harness ingest-session <id>` against any
+transcript that still exists in `~/.claude/projects/<encoded>/`.
+
+## 10. Session metrics (v0.5.0+)
+
+Per-session economic data captured by `harness ingest-session` from
+the host's `transcript_path` JSONL. Stored in `lineage.sqlite` only;
+NOT in snapshot blobs (per §2 immutability + §2.1 composition-only).
+
+The framing shift this section introduces: harness moves from
+"captures composition" to "captures composition AND session
+economics." Composition is observed at hook-fire time and pinned
+into immutable snapshot blobs. Economics — model used per turn,
+token usage, tool calls, Claude Code version — are observed
+post-hoc by reading the JSONL transcript. The two surfaces are
+deliberately separate: snapshots remain content-addressable and
+session-independent; metrics are session-keyed and mutable only
+in the additive sense (new turns appended).
+
+### 10.1 turn_metrics table
+
+PRIMARY KEY `(session_id, turn_index)`. Each row is one JSONL
+turn — one `assistant` or `user` line. Non-message JSONL lines
+(queue-operation, attachment, etc.) are skipped.
+
+```
+session_id                  TEXT NOT NULL    UUID matching attribution.session_id
+turn_index                  INTEGER NOT NULL 0-based, in JSONL line order
+turn_type                   TEXT NOT NULL    'user' | 'assistant'
+model                       TEXT             NULL on user turns
+input_tokens                INTEGER          assistant turns only
+output_tokens               INTEGER          assistant turns only
+cache_creation_input_tokens INTEGER          assistant turns only
+cache_read_input_tokens     INTEGER          assistant turns only
+tool_names_csv              TEXT             comma-separated; assistant turns only
+is_sidechain                INTEGER (0|1)    1 if subagent (Task tool); 0 if main
+attribution_skill           TEXT             active skill name if any; else NULL
+ingested_at                 TEXT NOT NULL    ISO 8601 UTC
+request_id                  TEXT             Anthropic request_id for cross-ref
+```
+
+A `turn_metrics.session_id` MAY reference a session that has no
+attribution rows (sessions captured before harness was wired, or
+sessions ingested via `--all` against a project whose `.harness/`
+was added partway through). Conforming queries MUST tolerate this.
+
+### 10.2 What is NOT stored
+
+The ingester's redaction whitelist is NORMATIVE. The following
+JSONL fields MUST NEVER be copied to harness storage:
+
+- `message.content[*].text` (assistant text response)
+- `message.content[*].input` (tool call arguments)
+- `message.content[*].tool_use_id` (only the `.name` is kept)
+- Any `tool_result` block (`.content`)
+- User message body of any shape
+- `system_prompt`, `append_system_prompt`
+- `thinking` blocks (`.thinking`, `.signature`)
+- Any `attachment` data field
+- `last_assistant_message` (Stop event payload — see hooks.md §1.1
+  v0.5.0 amendment; same privacy class as `prompt`)
+
+The SessionEnd event's `reason` field MAY be stored (low-cardinality
+enum, e.g. `"other"`; not content) but is currently observed-and-
+ignored — there is no column for it. A future minor bump may add
+one.
+
+A test gate (Gate W12.5) MUST verify the whitelist holds against a
+fuzzed transcript: insert random byte sequences into all forbidden
+fields, ingest, then assert NONE of those bytes appear anywhere in
+`turn_metrics` (or anywhere in `lineage.sqlite`).
+
+The implementation discipline:
+
+1. **Whitelist, not blacklist.** The parser extracts ONLY the
+   fields enumerated above. It does NOT walk the full JSONL
+   object and exclude fields; it builds the row from named
+   accesses on a parsed dict. New JSONL fields added by future
+   Claude Code versions are automatically excluded by virtue of
+   not being in the whitelist.
+2. **Type-tighten at the boundary.** A `TurnRecord` type with
+   exactly the whitelisted fields. The parser returns
+   `TurnRecord | null` (null on parse failure). No `any`, no
+   `unknown`, no spread of arbitrary input.
+3. **Tool name canonicalization.** Tool names like
+   `mcp__server__tool` are kept as-is; they are tool registry
+   identifiers, not user content. No `tool_use.input` is read
+   or stored.
+
+### 10.3 Per-tool token attribution (impossibility)
+
+The JSONL `usage` block is per-assistant-turn, not per-tool-call.
+A single turn invokes one or more tools; the usage block sums
+across them. The data model preserves the relationship via
+`tool_names_csv` — queries can ask "which sessions touched tool X"
+and "what was the token cost of those sessions" — but CANNOT
+attribute tokens to individual tool calls. Queries that try to
+compute "tokens spent on tool X" are not supportable. This
+limitation is documented in the spec, in CLI help text for
+`harness session-cost --by-tool`, and is NOT papered over with
+estimation heuristics.
+
+### 10.4 In-progress JSONL ingestion
+
+The transcript JSONL is being written WHILE the session is live.
+Linux append() is line-atomic up to PIPE_BUF (4KB); Claude Code
+is single-writer per session. The realistic in-progress shape is
+"N complete lines + 1 trailing partial line." The ingester
+strategy:
+
+1. Read each `\n`-terminated line.
+2. Try `JSON.parse()`; on success emit a row; on failure (corrupt
+   line, partial trailing line, non-message line type) silently
+   skip.
+3. Drop any unterminated trailing line.
+
+No file lock is needed. Idempotent re-runs pick up new turns via
+the existing `MAX(turn_index)` lookup before insert. The contract
+is locked by drift detector W2.10 (see
+[hooks.md §1.1](hooks.md#11-channel-a--stdin-json-primary-claude-code-native)
+and `scripts/dogfood-v0_4/lib-jsonl.sh`).
+
+### 10.5 Project-dir encoding rule
+
+Claude Code maps `cwd` to `~/.claude/projects/<encoded>/` by:
+
+```
+encode(path) = each char ∈ [a-zA-Z0-9] kept; everything else → '-'
+                no collapsing of consecutive dashes
+                operates per-character (multi-byte UTF-8 chars
+                  become one '-' each, NOT one '-' per byte)
+```
+
+Example: `/tmp/q3d-üñîcödé` → `-tmp-q3d----c-d-` (verified).
+
+The ingester uses this rule to locate `<session-id>.jsonl` from a
+session's `cwd` (recorded on attribution rows). The contract is
+locked by drift detector L2.2.
+
+### 10.6 Idempotency
+
+`harness ingest-session <id>` is idempotent. Re-running on the
+same JSONL after no new turns produces zero new rows. Re-running
+after N new turns appended produces exactly N new rows; existing
+rows are unchanged. The implementation: query
+`MAX(turn_index) FROM turn_metrics WHERE session_id = ?` before
+parsing; skip lines whose computed `turn_index` ≤ that maximum.
+
+The `--since-turn N` flag forces re-ingestion starting from turn
+N (intended for parser bug recovery; the data is overwritten via
+the `(session_id, turn_index)` PRIMARY KEY).
+
+### 10.7 Snapshot interaction
+
+Ingestion NEVER modifies snapshot blobs. The `claudeCodeVersion`
+field on snapshots is populated by the capture-side path
+(`packages/core/src/capture.ts` reading from `transcript_path`
+at hook-fire time, OR shelling out to `claude --version` as
+fallback) — never by the ingester. This is the load-bearing
+immutability invariant: see W12.7 / W12.8 gates.

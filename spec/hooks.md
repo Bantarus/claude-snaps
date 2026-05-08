@@ -99,6 +99,50 @@ SessionStart is normal, not an error).
   documenting it. Removed from the schema until a host version is
   observed sending it.
 
+**v0.5.0 update:** `transcript_path` was observed-and-unused through
+v0.4.x. The v0.5.0 `harness ingest-session` command reads the file
+at this path under a strict redaction whitelist (see
+[format.md §10.2](format.md#102-what-is-not-stored)). The hook
+itself still does not read transcript bytes; ingestion is post-hoc
+and asynchronous. The hook's only new v0.5.0 capability is reading
+the JSONL's per-turn `version` field (Claude Code CLI version) at
+first-fire to populate `claudeCodeVersion` on a newly-written
+snapshot — bounded, single-line read; no whitelisted content is
+captured by this path.
+
+**v0.5.0 hook event additions:** real Claude Code 2.1.131 emits FOUR
+hook events per `claude -p` session, in order:
+
+```
+SessionStart → UserPromptSubmit → Stop → SessionEnd
+```
+
+The hook's contract through v0.4.x silently coerced any unknown
+`hook_event_name` to `SessionStart` (load-bearing for tolerance —
+locked by drift detector W2.9). v0.5.0 EXTENDS the contract:
+`SessionEnd` becomes a known event-name with its own attribution
+event_kind (`session_end`), enabling auto-ingestion via
+`harness install-hook --with-session-end`. `Stop` and `PreCompact`
+remain unknown-and-coerced; their payloads are captured by the
+drift detector but not interpreted by the hook in v0.5.0.
+
+**SessionEnd payload (5 fields, verified against Claude Code 2.1.131):**
+
+```json
+{
+  "session_id":      "<uuid v4 string>",
+  "transcript_path": "<absolute path to session JSONL>",
+  "cwd":             "<absolute path>",
+  "hook_event_name": "SessionEnd",
+  "reason":          "other | <future enum values>"
+}
+```
+
+The `reason` field MAY be stored as an attribution column (low-
+cardinality enum). The Stop event's `last_assistant_message` field
+carries Claude's response text and MUST NEVER be stored — same
+privacy class as `prompt`; see [format.md §10.2](format.md#102-what-is-not-stored).
+
 #### Hook responsibilities
 
 The hook MUST distinguish events via `hook_event_name`:

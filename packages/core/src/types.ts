@@ -48,10 +48,16 @@ export interface Snapshot {
   author?: string;
   formatVersion?: string;
   // Session-level context shipped in the hook stdin payload (SessionStart
-  // and UserPromptSubmit). Both optional: pre-amendment snapshots and
-  // non-hook writers omit them.
+  // and UserPromptSubmit). All optional: pre-amendment snapshots and
+  // non-hook writers omit them. First-observation-wins per format.md §2.1.
   model?: string;
   permissionMode?: string;
+  // Claude Code CLI version observed at first hook fire. Read from the
+  // transcript JSONL's per-turn `version` field (or `claude --version`
+  // fallback). Excluded from canonical bytes per format.md §3.1, so the
+  // same composition observed across CLI version bumps still hashes the
+  // same. Added v0.5.0.
+  claudeCodeVersion?: string;
   modules: Module[];
 }
 

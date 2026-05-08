@@ -56,12 +56,19 @@ export function canonicalBytes(value: unknown): Uint8Array {
 // them ensures two observations of identical composition produce the
 // same snapshot id — the load-bearing invariant for trajectory queries
 // in §2.7.
-const EXCLUDED_FIELDS = ['id', 'createdAt', 'codePin', 'model', 'permissionMode'] as const;
+const EXCLUDED_FIELDS = [
+  'id',
+  'createdAt',
+  'codePin',
+  'model',
+  'permissionMode',
+  'claudeCodeVersion',
+] as const;
 
 /**
  * Compute the snapshot id: sha256(canonicalBytes(snap \ EXCLUDED_FIELDS))[:40],
  * lowercase hex. EXCLUDED_FIELDS = id, createdAt, codePin, model,
- * permissionMode (spec/format.md §3.1).
+ * permissionMode, claudeCodeVersion (spec/format.md §3.1).
  *
  * Accepts a Snapshot with or without those fields; they are destructured
  * out before hashing so the input is never mutated.

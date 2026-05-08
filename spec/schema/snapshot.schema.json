@@ -61,6 +61,10 @@
       "type": ["string", "null"],
       "description": "Permission mode reported by the host on SessionStart (e.g. 'default', 'plan', 'acceptEdits'). Optional; absent on snapshots written before the host shipped a permission_mode field, or by non-hook writers."
     },
+    "claudeCodeVersion": {
+      "type": ["string", "null"],
+      "description": "Claude Code CLI version observed at the snapshot's first hook fire (e.g. '2.1.131'). Optional; absent on pre-v0.5 snapshots and non-hook writers. First-observation-wins per format.md §2.1. Excluded from canonical bytes (§3.1)."
+    },
     "author": {
       "type": ["string", "null"]
     },

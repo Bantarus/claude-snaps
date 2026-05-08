@@ -47,7 +47,14 @@ const FIXTURE_ID = 'da5289e572c0fe42e6dcda250a6d392543302965';
 const FIXTURE_BYTE_LENGTH = 382;
 
 // Fields stripped from canonical bytes per spec/format.md §3.1.
-const EXCLUDED_FIELDS = ['id', 'createdAt', 'codePin', 'model', 'permissionMode'] as const;
+const EXCLUDED_FIELDS = [
+  'id',
+  'createdAt',
+  'codePin',
+  'model',
+  'permissionMode',
+  'claudeCodeVersion',
+] as const;
 
 function stripExcluded<T extends Record<string, unknown>>(obj: T): Partial<T> {
   const out: Record<string, unknown> = { ...obj };
