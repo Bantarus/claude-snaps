@@ -416,6 +416,34 @@ describe('harness-hook — Claude Code stdin JSON contract (primary channel)', (
       repo.close();
     }
   });
+
+  test('transcript_path with version field lands on the new snapshot as claudeCodeVersion (v0.5.0)', async () => {
+    const cwd = await freshHarnessRepo();
+    writeMinimalClaude(cwd);
+    const transcriptPath = join(cwd, 'transcript.jsonl');
+    writeFileSync(
+      transcriptPath,
+      JSON.stringify({ type: 'summary' }) + '\n' +
+        JSON.stringify({ type: 'user', version: '2.1.131' }) + '\n',
+      'utf-8',
+    );
+    const stdin = JSON.stringify({
+      session_id: 'with-version',
+      cwd,
+      hook_event_name: 'SessionStart',
+      source: 'startup',
+      transcript_path: transcriptPath,
+    });
+    const r = await runHook([], { cwd, stdin });
+    expect(r.code).toBe(0);
+    const repo = openRepo(cwd);
+    try {
+      const head = repo.snapshot(repo.resolveHead()!);
+      expect(head.claudeCodeVersion).toBe('2.1.131');
+    } finally {
+      repo.close();
+    }
+  });
 });
 
 describe('harness-hook — APM enrichment when lockfile present', () => {

@@ -244,6 +244,8 @@ export class Repo {
     /** Optional pass-through onto a newly-written snapshot. */
     model?: string;
     permissionMode?: string;
+    /** Claude Code CLI version observed at hook-fire (v0.5.0). */
+    claudeCodeVersion?: string;
     /**
      * Override createdAt / observedAt. Defaults to now. Tests use this
      * for deterministic timestamps; the hook should leave it unset.
@@ -257,6 +259,7 @@ export class Repo {
       noteText: null,
       ...(event.model !== undefined ? { model: event.model } : {}),
       ...(event.permissionMode !== undefined ? { permissionMode: event.permissionMode } : {}),
+      ...(event.claudeCodeVersion !== undefined ? { claudeCodeVersion: event.claudeCodeVersion } : {}),
       ...(event.now !== undefined ? { now: event.now } : {}),
     });
   }
@@ -283,6 +286,7 @@ export class Repo {
     /** Optional pass-through onto a newly-written snapshot. */
     model?: string;
     permissionMode?: string;
+    claudeCodeVersion?: string;
     now?: string;
   }): string {
     if (typeof args.noteText !== 'string' || args.noteText.length === 0) {
@@ -295,6 +299,7 @@ export class Repo {
       noteText: args.noteText,
       ...(args.model !== undefined ? { model: args.model } : {}),
       ...(args.permissionMode !== undefined ? { permissionMode: args.permissionMode } : {}),
+      ...(args.claudeCodeVersion !== undefined ? { claudeCodeVersion: args.claudeCodeVersion } : {}),
       ...(args.now !== undefined ? { now: args.now } : {}),
     });
   }
@@ -335,6 +340,7 @@ export class Repo {
     noteText: string | null;
     model?: string;
     permissionMode?: string;
+    claudeCodeVersion?: string;
     now?: string;
   }): string {
     const observedAt = event.now ?? new Date().toISOString();
@@ -388,6 +394,7 @@ export class Repo {
     };
     if (event.model !== undefined) baseBlob.model = event.model;
     if (event.permissionMode !== undefined) baseBlob.permissionMode = event.permissionMode;
+    if (event.claudeCodeVersion !== undefined) baseBlob.claudeCodeVersion = event.claudeCodeVersion;
 
     const written = this.writeSnapshot(baseBlob);
     if (head === null || head.type === 'symbolic') {

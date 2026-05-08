@@ -1,5 +1,6 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'node:fs';
 import { basename, join, relative } from 'node:path';
 import { readApmLock, type ApmLockEntry } from './apm.js';
 import { IoError } from './errors.js';
@@ -409,4 +410,95 @@ function hashPath(
   // for content-equivalent state and would create spurious mismatches.
   const tag = stat.isDirectory() ? 'D' : stat.isFile() ? 'F' : 'O';
   hash.update(`${rel} ${tag} ${stat.mtimeMs} ${stat.size}\n`);
+}
+
+// ── claudeCodeVersion (v0.5.0; spec/format.md §2.1) ─────────────────────
+
+const VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/;
+const TRANSCRIPT_PEEK_BYTES = 64 * 1024;
+
+/**
+ * Resolve the host CLI's Claude Code version at hook-fire time.
+ *
+ * Order:
+ *   1. If `transcriptPath` is provided and reachable, read up to the
+ *      first 64 KB and pull the `version` field from the first
+ *      complete `\n`-terminated JSON line that carries one. The
+ *      transcript JSONL is the canonical per-turn source — tracks
+ *      auto-updates that occur mid-session that `claude --version`
+ *      can't see (the running process self-identifies).
+ *   2. Fallback: shell out to `claude --version` with a 2s timeout.
+ *      If the binary isn't on PATH or doesn't respond, returns null.
+ *
+ * Returns null when neither path yields a value matching X.Y.Z.
+ *
+ * Read is bounded so a multi-MB transcript stays cheap. No content
+ * beyond the `version` field itself is consumed.
+ */
+export function readClaudeCodeVersion(transcriptPath: string | undefined): string | null {
+  if (transcriptPath !== undefined && transcriptPath.length > 0) {
+    const v = readVersionFromTranscript(transcriptPath);
+    if (v !== null) return v;
+  }
+  return shellOutClaudeVersion();
+}
+
+function readVersionFromTranscript(path: string): string | null {
+  let fd: number;
+  try {
+    fd = openSync(path, 'r');
+  } catch {
+    return null;
+  }
+  try {
+    const buf = Buffer.alloc(TRANSCRIPT_PEEK_BYTES);
+    const bytes = readSync(fd, buf, 0, TRANSCRIPT_PEEK_BYTES, 0);
+    if (bytes <= 0) return null;
+    const text = buf.subarray(0, bytes).toString('utf-8');
+    // Walk lines; first JSON line whose `version` matches X.Y.Z wins.
+    // Skip the trailing partial line if no terminator was seen — better
+    // null than a guess on incomplete bytes.
+    const newlineEnd = text.lastIndexOf('\n');
+    if (newlineEnd < 0) return null;
+    for (const line of text.slice(0, newlineEnd).split('\n')) {
+      if (line.length === 0) continue;
+      const v = pluckVersionField(line);
+      if (v !== null) return v;
+    }
+    return null;
+  } finally {
+    try { closeSync(fd); } catch { /* best-effort */ }
+  }
+}
+
+function pluckVersionField(line: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const v = (parsed as Record<string, unknown>)['version'];
+  return typeof v === 'string' && VERSION_PATTERN.test(v) ? v : null;
+}
+
+function shellOutClaudeVersion(): string | null {
+  let result;
+  try {
+    // Bounded timeout so a wedged claude binary can't stall the hook.
+    // If the call exceeds the timeout, the hook still exits 0 — we
+    // just lose the version field on this fire (first-observation-wins
+    // means a later fire can fill it in).
+    result = spawnSync('claude', ['--version'], {
+      encoding: 'utf-8',
+      timeout: 2000,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch {
+    return null;
+  }
+  if (result.error !== undefined || result.status !== 0) return null;
+  const m = (result.stdout ?? '').match(/([0-9]+\.[0-9]+\.[0-9]+)/);
+  return m?.[1] ?? null;
 }

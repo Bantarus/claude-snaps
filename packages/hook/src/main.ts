@@ -1,4 +1,4 @@
-import { Repo, captureCurrentStateFast } from '@harness/core';
+import { Repo, captureCurrentStateFast, readClaudeCodeVersion } from '@harness/core';
 import { parseHookArgs, type HookEventName } from './args.js';
 
 /**
@@ -67,12 +67,19 @@ export async function run(argv: string[]): Promise<void> {
     // Cache miss: do the full work via observe() — composition-change
     // detection happens inside (compares head snapshot's modules to
     // live modules; writes new snapshot only on actual change).
+    //
+    // Resolve claudeCodeVersion from the transcript JSONL (or shell
+    // fallback) only on cache-miss — the hot-path cache hit short-
+    // circuits before this. First-observation-wins per spec/format.md
+    // §2.1: only the first fire that writes a snapshot pins the value.
+    const claudeCodeVersion = readClaudeCodeVersion(args.transcriptPath) ?? undefined;
     const snapshotId = repo.observe({
       sessionId: args.sessionId,
       eventKind,
       source: args.source ?? null,
       ...(args.model !== undefined ? { model: args.model } : {}),
       ...(args.permissionMode !== undefined ? { permissionMode: args.permissionMode } : {}),
+      ...(claudeCodeVersion !== undefined ? { claudeCodeVersion } : {}),
     });
 
     // Refresh the cache for the next fire. Best-effort: a failure here

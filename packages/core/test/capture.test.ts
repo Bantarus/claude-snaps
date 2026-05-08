@@ -242,3 +242,98 @@ describe('captureCurrentState — minimal project (just builtins)', () => {
     expect(mods.length).toBeGreaterThan(0);
   });
 });
+
+describe('readClaudeCodeVersion — v0.5.0', () => {
+  test('reads version from first JSON line of transcript JSONL', async () => {
+    const { readClaudeCodeVersion } = await import('../src/capture.js');
+    const dir = mkdtempSync(join(tmpdir(), 'cca-ver-'));
+    const path = join(dir, 'transcript.jsonl');
+    writeFileSync(
+      path,
+      JSON.stringify({ type: 'summary', summary: 'x' }) + '\n' +
+      JSON.stringify({ type: 'user', version: '2.1.131', sessionId: 'abc' }) + '\n',
+      'utf-8',
+    );
+    expect(readClaudeCodeVersion(path)).toBe('2.1.131');
+  });
+
+  test('returns null on a transcript with no version field', async () => {
+    const { readClaudeCodeVersion } = await import('../src/capture.js');
+    const dir = mkdtempSync(join(tmpdir(), 'cca-ver-'));
+    const path = join(dir, 'transcript.jsonl');
+    writeFileSync(path, JSON.stringify({ type: 'summary' }) + '\n', 'utf-8');
+    // The shell-out fallback may or may not return a version depending
+    // on whether `claude` is on the test PATH. The contract under test
+    // is: "no version in JSONL → fall back to shell-out." We accept
+    // either string-X.Y.Z or null and assert the no-throw path.
+    const result = readClaudeCodeVersion(path);
+    expect(result === null || /^[0-9]+\.[0-9]+\.[0-9]+$/.test(result)).toBe(true);
+  });
+
+  test('returns null when transcriptPath is undefined and no claude on PATH', async () => {
+    const { readClaudeCodeVersion } = await import('../src/capture.js');
+    const orig = process.env['PATH'];
+    process.env['PATH'] = '/nonexistent';
+    try {
+      expect(readClaudeCodeVersion(undefined)).toBe(null);
+    } finally {
+      process.env['PATH'] = orig;
+    }
+  });
+
+  test('returns null when transcriptPath does not exist and no claude on PATH', async () => {
+    const { readClaudeCodeVersion } = await import('../src/capture.js');
+    const orig = process.env['PATH'];
+    process.env['PATH'] = '/nonexistent';
+    try {
+      expect(readClaudeCodeVersion('/no/such/file.jsonl')).toBe(null);
+    } finally {
+      process.env['PATH'] = orig;
+    }
+  });
+
+  test('rejects malformed version strings (non-X.Y.Z)', async () => {
+    const { readClaudeCodeVersion } = await import('../src/capture.js');
+    const dir = mkdtempSync(join(tmpdir(), 'cca-ver-'));
+    const path = join(dir, 'transcript.jsonl');
+    writeFileSync(
+      path,
+      JSON.stringify({ version: 'unknown' }) + '\n' +
+      JSON.stringify({ version: '2.1' }) + '\n' +
+      JSON.stringify({ version: '2.1.131' }) + '\n',
+      'utf-8',
+    );
+    expect(readClaudeCodeVersion(path)).toBe('2.1.131');
+  });
+
+  test('drops trailing partial line (in-progress JSONL)', async () => {
+    const { readClaudeCodeVersion } = await import('../src/capture.js');
+    const dir = mkdtempSync(join(tmpdir(), 'cca-ver-'));
+    const path = join(dir, 'transcript.jsonl');
+    // No trailing newline; the partial last line MUST be ignored. PATH is
+    // stubbed to disable the shell-out fallback so this asserts the JSONL
+    // parser strictly drops unterminated bytes.
+    writeFileSync(path, '{"version":"2.1.131"', 'utf-8');
+    const orig = process.env['PATH'];
+    process.env['PATH'] = '/nonexistent';
+    try {
+      expect(readClaudeCodeVersion(path)).toBe(null);
+    } finally {
+      process.env['PATH'] = orig;
+    }
+  });
+
+  test('skips non-JSON lines and continues searching', async () => {
+    const { readClaudeCodeVersion } = await import('../src/capture.js');
+    const dir = mkdtempSync(join(tmpdir(), 'cca-ver-'));
+    const path = join(dir, 'transcript.jsonl');
+    writeFileSync(
+      path,
+      'GARBAGE\n' +
+      '{not even close\n' +
+      JSON.stringify({ version: '2.1.131' }) + '\n',
+      'utf-8',
+    );
+    expect(readClaudeCodeVersion(path)).toBe('2.1.131');
+  });
+});
