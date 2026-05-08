@@ -26,15 +26,16 @@ SQL_003 = os.path.join(ROOT, "spec", "schema", "003_session_observation_cache.sq
 SQL_004 = os.path.join(ROOT, "spec", "schema", "004_v0_3_notes.sql")
 SQL_005 = os.path.join(ROOT, "spec", "schema", "005_drop_tag_kind.sql")
 SQL_006 = os.path.join(ROOT, "spec", "schema", "006_apm_lockfile.sql")
+SQL_007 = os.path.join(ROOT, "spec", "schema", "007_session_metrics.sql")
 JSCH = os.path.join(ROOT, "spec", "schema", "snapshot.schema.json")
 
 
 def _setup_sql():
-    """Apply 001 → 002 → 003 → 004 → 005 → 006 to a fresh in-memory DB.
-    Tests run against the post-migration v6 schema — the actual shape
-    v0.4.0 clients will see."""
+    """Apply 001 → 002 → 003 → 004 → 005 → 006 → 007 to a fresh in-memory DB.
+    Tests run against the post-migration v7 schema — the actual shape
+    v0.5.0 clients will see."""
     conn = sqlite3.connect(":memory:")
-    for path in (SQL_001, SQL_002, SQL_003, SQL_004, SQL_005, SQL_006):
+    for path in (SQL_001, SQL_002, SQL_003, SQL_004, SQL_005, SQL_006, SQL_007):
         with open(path) as f:
             conn.executescript(f.read())
     conn.execute(
@@ -206,6 +207,79 @@ def _check_attribution_table(conn) -> tuple[int, int]:
     return passed, failed
 
 
+def _check_turn_metrics_table(conn) -> tuple[int, int]:
+    """Verify the turn_metrics table exists with the expected CHECK
+    constraints (turn_type IN ('user','assistant'); is_sidechain IN (0,1))
+    and the (session_id, turn_index) PRIMARY KEY enforced. Returns
+    (passed, failed)."""
+    print(f'\n{"turn_metrics check":50s}  result')
+    passed = failed = 0
+    cases = [
+        # (turn_type, is_sidechain, expected_acceptance)
+        ('user',      0,  True),
+        ('assistant', 0,  True),
+        ('assistant', 1,  True),
+        ('system',    0,  False),  # not in CHECK
+        ('',          0,  False),
+        ('user',      2,  False),  # is_sidechain CHECK
+        ('user',     -1,  False),
+    ]
+    base_sid = 'sess-tm'
+    for i, (ttype, sidechain, expected) in enumerate(cases):
+        try:
+            conn.execute(
+                "INSERT INTO turn_metrics(session_id, turn_index, turn_type, "
+                "is_sidechain, ingested_at) VALUES (?, ?, ?, ?, ?)",
+                (f"{base_sid}-{i}", 0, ttype, sidechain, '2026-05-08T00:00:00.000Z'),
+            )
+            ok_insert = True
+        except sqlite3.IntegrityError:
+            ok_insert = False
+        ok = (ok_insert == expected)
+        flag = "ok" if ok else "FAIL"
+        label = f"turn_type={ttype!r}, is_sidechain={sidechain}"
+        if ok: passed += 1
+        else:  failed += 1
+        print(f"{label:50s}  {flag}")
+
+    # Composite PK enforcement: same (session_id, turn_index) must reject
+    # the second insert.
+    try:
+        conn.execute(
+            "INSERT INTO turn_metrics(session_id, turn_index, turn_type, "
+            "is_sidechain, ingested_at) VALUES ('pk-test', 0, 'user', 0, "
+            "'2026-05-08T00:00:00.000Z')"
+        )
+        try:
+            conn.execute(
+                "INSERT INTO turn_metrics(session_id, turn_index, turn_type, "
+                "is_sidechain, ingested_at) VALUES ('pk-test', 0, 'assistant', 0, "
+                "'2026-05-08T00:00:01.000Z')"
+            )
+            pk_dup_rejected = False
+        except sqlite3.IntegrityError:
+            pk_dup_rejected = True
+    except sqlite3.IntegrityError:
+        pk_dup_rejected = False
+    flag = "ok" if pk_dup_rejected else "FAIL"
+    if pk_dup_rejected: passed += 1
+    else:               failed += 1
+    print(f"{'PK (session_id, turn_index) rejects duplicates':50s}  {flag}")
+
+    # claude_code_version column exists on snapshots (added by 007).
+    try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(snapshots)").fetchall()}
+        ccv_present = 'claude_code_version' in cols
+    except sqlite3.Error:
+        ccv_present = False
+    flag = "ok" if ccv_present else "FAIL"
+    if ccv_present: passed += 1
+    else:           failed += 1
+    print(f"{'snapshots.claude_code_version column present':50s}  {flag}")
+
+    return passed, failed
+
+
 def main() -> int:
     conn = _setup_sql()
     v = _setup_jsonschema()
@@ -232,9 +306,14 @@ def main() -> int:
     fail_total += f
     if f: rc = 1
 
+    p, f = _check_turn_metrics_table(conn)
+    pass_total += p
+    fail_total += f
+    if f: rc = 1
+
     print(f"\nTotal: {pass_total} passed, {fail_total} failed.")
     if rc == 0:
-        print("All cases agree across SQL CHECK and JSON Schema (post-006 v0.4.0 schema).")
+        print("All cases agree across SQL CHECK and JSON Schema (post-007 v0.5.0 schema).")
     else:
         print("AGREEMENT FAILURE — SQL CHECK and JSON Schema have drifted.")
     return rc
