@@ -140,3 +140,43 @@ w2_8_real_cc_2_1_128_payload_shape() {
   assert_equal "session_start,user_prompt" "$kinds" "event_kinds in order: session_start, user_prompt"
 }
 register_case "W2.8 DRIFT-DETECT: Claude Code 2.1.128 asymmetric payload yields null model/permissionMode" w2_8_real_cc_2_1_128_payload_shape
+
+# W2.9 — Claude Code 2.1.131 emits SessionEnd + Stop on every
+# `claude -p`. The v0.4 hook silently coerces unknown event names to
+# "SessionStart" (see packages/hook/src/args.ts:131-136). This case
+# locks current behavior: SessionEnd payload → exit 0, recorded as
+# a session_start attribution (technically wrong, but stable).
+#
+# v0.5 will wire SessionEnd → harness ingest-session and add a
+# proper event_kind. When that lands, this case will need updating;
+# the test label says CURRENT-V0_4 so future-you knows where to look.
+#
+# Bonus pins from the same probe (2026-05-08, CC 2.1.131):
+#   SessionEnd payload  : session_id, transcript_path, cwd,
+#                         hook_event_name, reason
+#   Stop payload        : session_id, transcript_path, cwd,
+#                         hook_event_name, permission_mode,
+#                         stop_hook_active, last_assistant_message
+#
+# `last_assistant_message` carries Claude's response text — same
+# privacy class as `prompt`. v0.5 ingester redaction whitelist (see
+# spec/format.md §10.2 once landed) MUST exclude it.
+w2_9_session_end_tolerated_as_session_start() {
+  fixture_baseline_no_apm
+  local sid="22222222-3333-4222-9333-444444444444"
+  local tp="/tmp/cip-fake-${sid}.jsonl"
+  jq -nc \
+    --arg sid "$sid" --arg cwd "$FIXTURE_DIR" --arg tp "$tp" \
+    '{session_id: $sid, transcript_path: $tp, cwd: $cwd,
+      hook_event_name: "SessionEnd", reason: "other"}' \
+    | "$HARNESS_HOOK"
+  local rc=$?
+  assert_exit 0 "$rc" "hook accepts SessionEnd payload without crashing"
+  # Currently coerced to session_start. When v0.5 adds a proper
+  # session_end event_kind, flip this assertion AND update the
+  # case label to remove CURRENT-V0_4.
+  assert_count 1 "$(trajectory_count "$FIXTURE_DIR" "$sid")" "1 attribution row recorded"
+  local kinds; kinds=$(trajectory_kinds "$FIXTURE_DIR" "$sid" | tr '\n' ',' | sed 's/,$//')
+  assert_equal "session_start" "$kinds" "v0.4 coerces SessionEnd to session_start (CURRENT-V0_4 behavior)"
+}
+register_case "W2.9 CURRENT-V0_4: hook tolerates SessionEnd payload (coerces to session_start)" w2_9_session_end_tolerated_as_session_start
