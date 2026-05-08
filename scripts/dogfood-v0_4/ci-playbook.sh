@@ -28,6 +28,7 @@ source "$HERE/lib-assert.sh"
 source "$HERE/lib-hook-fire.sh"
 source "$HERE/lib-fixtures.sh"
 source "$HERE/lib-blob.sh"
+source "$HERE/lib-jsonl.sh"
 
 # ---- flags ----
 

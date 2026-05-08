@@ -180,3 +180,43 @@ w2_9_session_end_tolerated_as_session_start() {
   assert_equal "session_start" "$kinds" "v0.4 coerces SessionEnd to session_start (CURRENT-V0_4 behavior)"
 }
 register_case "W2.9 CURRENT-V0_4: hook tolerates SessionEnd payload (coerces to session_start)" w2_9_session_end_tolerated_as_session_start
+
+# W2.10 — locks the line-by-line JSONL parser strategy the v0.5
+# ingester will use for reading `transcript_path`. The host writes
+# JSONL in append mode; on Linux that is line-atomic up to PIPE_BUF
+# (4KB) and Claude Code is single-writer per session, so the only
+# realistic in-progress shape is "N complete lines + 1 trailing
+# partial." The parser must drop the partial silently and process
+# the N complete records.
+#
+# Probe (2026-05-08): truncated last 50 bytes of a real session
+# JSONL → `jq -c .type whole-file` exits 5 with parse error on the
+# partial line BUT correctly emits all preceding complete records
+# first. The lib-jsonl.sh wrapper makes that drop silent and
+# corruption-tolerant per-line.
+w2_10_truncated_final_jsonl_line() {
+  mkdir -p "$CIP_SCRATCH"
+  local fixture; fixture="$CIP_SCRATCH/w2-10-fixture.jsonl"
+  rm -f "$fixture"
+  # Write 3 complete records + 1 truncated trailing line (no newline,
+  # mid-string). The parser should yield 3 records.
+  printf '{"type":"user","seq":1}\n'      >> "$fixture"
+  printf '{"type":"assistant","seq":2}\n' >> "$fixture"
+  printf '{"type":"user","seq":3}\n'      >> "$fixture"
+  printf '{"type":"assistant","seq":4,"truncated":' >> "$fixture"  # no newline; mid-JSON
+  local count; count=$(count_complete_jsonl_lines "$fixture")
+  assert_count 3 "$count" "parser drops truncated trailing line; emits 3 complete records"
+  # And: no partial line content leaks into the output.
+  local out; out=$(parse_jsonl_complete_lines "$fixture")
+  assert_not_contains "$out" "truncated" "no field from the partial line appears in parser output"
+  # Plus a corruption case: middle line is invalid JSON. Parser
+  # should skip it but still emit the surrounding valid lines.
+  rm -f "$fixture"
+  printf '{"type":"user","seq":1}\n'      >> "$fixture"
+  printf 'not json at all\n'              >> "$fixture"
+  printf '{"type":"user","seq":3}\n'      >> "$fixture"
+  count=$(count_complete_jsonl_lines "$fixture")
+  assert_count 2 "$count" "parser skips invalid middle line; emits surrounding valid records"
+  rm -f "$fixture"
+}
+register_case "W2.10 JSONL parser drops truncated trailing line + skips invalid lines" w2_10_truncated_final_jsonl_line
