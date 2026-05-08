@@ -97,3 +97,46 @@ w2_7_no_harness_ancestor() {
   rm -f /tmp/cip-w2-7-stderr
 }
 register_case "W2.7 hook on no-harness dir exits 0; no side effects" w2_7_no_harness_ancestor
+
+# W2.8 — Claude Code 2.1.128 payload contract drift detector.
+#
+# Synthesizes the EXACT byte shape Claude Code 2.1.128 sends so the
+# contract is asserted deterministically in CI (not just behind the
+# real-claude local-observe runner). When the host changes its
+# payload (adds `model`, moves `permission_mode` to SessionStart,
+# etc.), this case turns red and forces a spec/hooks.md §1.1
+# amendment. See spec/hooks.md §1.1 "Per-event payload (verified
+# against Claude Code 2.1.128)" for the verified shape.
+w2_8_real_cc_2_1_128_payload_shape() {
+  fixture_baseline_no_apm
+  # Real SessionStart payload shape (5 fields exactly): no model,
+  # no permission_mode, transcript_path is a real-looking path.
+  local sid="11111111-2222-4333-8444-555555555555"
+  local tp="/tmp/cip-fake-transcript-${sid}.jsonl"
+  jq -nc \
+    --arg sid "$sid" --arg cwd "$FIXTURE_DIR" --arg tp "$tp" \
+    '{session_id: $sid, transcript_path: $tp, cwd: $cwd,
+      hook_event_name: "SessionStart", source: "startup"}' \
+    | "$HARNESS_HOOK"
+  # Real UserPromptSubmit payload shape (6 fields): permission_mode
+  # only here, plus a `prompt` field harness observes-and-ignores.
+  jq -nc \
+    --arg sid "$sid" --arg cwd "$FIXTURE_DIR" --arg tp "$tp" \
+    '{session_id: $sid, transcript_path: $tp, cwd: $cwd,
+      hook_event_name: "UserPromptSubmit",
+      permission_mode: "plan",
+      prompt: "respond with just OK"}' \
+    | "$HARNESS_HOOK"
+  # Snapshot was written on SessionStart (composition change) — its
+  # model and permissionMode fields reflect that fire's payload,
+  # which carries neither.
+  local blob; blob=$(read_head_blob "$FIXTURE_DIR")
+  assert_json_path "$blob" '.model'          "null" "snapshot.model null (CC 2.1.128 omits model)"
+  assert_json_path "$blob" '.permissionMode' "null" "snapshot.permissionMode null (CC 2.1.128 sends permission_mode only on UserPromptSubmit; hot-path doesn't update)"
+  # Both events landed as attribution rows (proves the hook
+  # tolerated the asymmetric payload shapes).
+  assert_count 2 "$(trajectory_count "$FIXTURE_DIR" "$sid")" "both events recorded as attributions"
+  local kinds; kinds=$(trajectory_kinds "$FIXTURE_DIR" "$sid" | tr '\n' ',' | sed 's/,$//')
+  assert_equal "session_start,user_prompt" "$kinds" "event_kinds in order: session_start, user_prompt"
+}
+register_case "W2.8 DRIFT-DETECT: Claude Code 2.1.128 asymmetric payload yields null model/permissionMode" w2_8_real_cc_2_1_128_payload_shape
