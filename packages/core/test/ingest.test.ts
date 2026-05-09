@@ -208,8 +208,12 @@ describe('parseTranscriptJsonl (file-based)', () => {
   });
 });
 
-describe('Repo.ingestSession — end-to-end', () => {
-  test('first ingest: every record stored, cost summary populated', () => {
+// Each test below is gated by a W12.x name from the v0.5.0 spec
+// (docs/session-metrics-prompt.md). The unit-level coverage here is
+// the contract; step 10's `cases/w12_session_metrics.sh` mirrors
+// these gates at the CLI level.
+describe('Repo.ingestSession — end-to-end (W12 unit gates)', () => {
+  test('W12.1 — first ingest: every record stored, cost summary populated', () => {
     const repo = freshRepo();
     try {
       const path = writeTranscript(jsonl(
@@ -248,7 +252,7 @@ describe('Repo.ingestSession — end-to-end', () => {
     }
   });
 
-  test('idempotent: second ingest on unchanged file adds zero rows', () => {
+  test('W12.2 — idempotent: second ingest on unchanged file adds zero rows', () => {
     const repo = freshRepo();
     try {
       const path = writeTranscript(jsonl(
@@ -266,7 +270,7 @@ describe('Repo.ingestSession — end-to-end', () => {
     }
   });
 
-  test('append two new turns; re-ingest adds exactly two rows', () => {
+  test('W12.3 — append two new turns; re-ingest adds exactly two rows', () => {
     const repo = freshRepo();
     try {
       const initial = jsonl(
@@ -290,7 +294,7 @@ describe('Repo.ingestSession — end-to-end', () => {
     }
   });
 
-  test('isSidechain=true rows persisted with is_sidechain=1', () => {
+  test('W12.6 — isSidechain=true rows persisted with is_sidechain=1', () => {
     const repo = freshRepo();
     try {
       const path = writeTranscript(jsonl(
@@ -329,7 +333,7 @@ describe('Repo.ingestSession — end-to-end', () => {
     }
   });
 
-  test('mcp__server__tool name preserved end-to-end through SQL roundtrip', () => {
+  test('W12.4 — mcp__server__tool name preserved end-to-end through SQL roundtrip', () => {
     const repo = freshRepo();
     try {
       const path = writeTranscript(jsonl(
