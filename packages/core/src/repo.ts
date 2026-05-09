@@ -13,11 +13,14 @@ import { listSnapshots, readSnapshot, writeSnapshot } from './blob.js';
 import { captureCurrentState } from './capture.js';
 import { EmptyRepositoryError, IntegrityError, InvalidStateError, IoError } from './errors.js';
 import { IndexDb, type ListSnapshotsFilter, type ReindexResult } from './index_db.js';
+import { parseTranscriptJsonl } from './ingest.js';
 import { listRefs, readHead, readRef, resolveHead, writeRef } from './refs.js';
 import { reproduceSnapshot } from './reproduce.js';
 import type {
-  Attribution, AttributionEventKind, DiffOp, HeadState, Module,
-  ReproduceOptions, ReproduceResult, Snapshot,
+  Attribution, AttributionEventKind, DiffOp, HeadState,
+  IngestSessionOptions, IngestSessionResult, Module,
+  ReproduceOptions, ReproduceResult, SessionCostSummary, Snapshot,
+  TurnRecord,
 } from './types.js';
 
 const DEFAULT_BRANCH = 'main';
@@ -329,6 +332,115 @@ export class Repo {
    */
   sessionsAt(snapshotId: string): Array<{ sessionId: string; firstObservedAt: string; lastObservedAt: string }> {
     return this.db.sessionsAt(snapshotId);
+  }
+
+  // ── session metrics (v0.5.0; spec/format.md §10) ─────────────────────
+
+  /**
+   * Read the strict-whitelist parser's output from a transcript JSONL
+   * and persist new TurnRecord rows into `turn_metrics`.
+   *
+   * Idempotent on (sessionId, turn_index): re-running on an unchanged
+   * JSONL produces zero new rows. Re-running after N turns appended
+   * produces exactly N new rows; existing rows are unchanged.
+   *
+   * Privacy: extracts ONLY the whitelisted fields per
+   * spec/format.md §10.2. The parser does not spread the parsed JSONL
+   * into rows; every field is a named access. The fuzz gate W12.5
+   * verifies this empirically against canary-laced fixtures.
+   *
+   * Caller controls the wall-clock-stamping of `ingestedAt` (the
+   * `now` override is for tests).
+   */
+  ingestSession(args: {
+    sessionId: string;
+    transcriptPath: string;
+    options?: IngestSessionOptions;
+    /** Test-only override for `ingestedAt`. Production callers leave this unset. */
+    now?: string;
+  }): IngestSessionResult {
+    const ingestedAt = args.now ?? new Date().toISOString();
+    const dryRun = args.options?.dryRun === true;
+
+    const stored = this.db.maxTurnIndex(args.sessionId);
+    const sinceFloor = args.options?.sinceTurn;
+    // Resume-floor: the first turn_index we will WRITE. If the caller
+    // passes --since-turn N, force re-write from N (parser-bug
+    // recovery — combined with INSERT OR IGNORE, this won't actually
+    // overwrite existing rows; see ingestSession contract).
+    let writeFrom: number;
+    if (sinceFloor !== undefined) {
+      writeFrom = Math.max(0, sinceFloor);
+    } else {
+      writeFrom = stored === null ? 0 : stored + 1;
+    }
+
+    const candidates = parseTranscriptJsonl(
+      args.transcriptPath,
+      args.sessionId,
+      ingestedAt,
+    );
+
+    // Filter candidates to those at-or-after writeFrom. Anything
+    // below the floor is a re-walked prefix that's already stored;
+    // count it as skipped without sending it through INSERT OR IGNORE.
+    const toWrite: typeof candidates = [];
+    let skipped = 0;
+    for (const c of candidates) {
+      if (c.turnIndex < writeFrom) {
+        skipped++;
+      } else {
+        toWrite.push(c);
+      }
+    }
+
+    let added = 0;
+    if (dryRun) {
+      // No write; report what WOULD have been added. Defensive cap
+      // against PK collisions (parser-bug recovery via --since-turn N
+      // where N <= maxStored): only candidates whose index strictly
+      // exceeds the stored max are net-new.
+      const max = stored ?? -1;
+      added = toWrite.filter((c) => c.turnIndex > max).length;
+      skipped += toWrite.length - added;
+    } else {
+      added = this.db.insertTurnMetricsBatch(toWrite);
+      skipped += toWrite.length - added;
+    }
+
+    const cost = this.sessionCost(args.sessionId) ?? {
+      sessionId: args.sessionId,
+      totalTurns: 0,
+      userTurns: 0,
+      assistantTurns: 0,
+      models: [],
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      tools: {},
+      claudeCodeVersion: null,
+    };
+
+    return { sessionId: args.sessionId, added, skipped, cost, dryRun };
+  }
+
+  /**
+   * Aggregate per-session cost summary from `turn_metrics`. Returns
+   * null when no turn_metrics row exists for the session (e.g. before
+   * `ingestSession` has been run, or for a session whose JSONL is
+   * absent).
+   */
+  sessionCost(sessionId: string): SessionCostSummary | null {
+    return this.db.sessionCost(sessionId);
+  }
+
+  /**
+   * Read every TurnRecord stored for a session, ordered by turn_index.
+   * Empty when the session has not been ingested.
+   */
+  turnsOf(sessionId: string): TurnRecord[] {
+    return this.db.turnsOf(sessionId);
   }
 
   // ── shared capture-and-attribute path used by observe() and note() ──

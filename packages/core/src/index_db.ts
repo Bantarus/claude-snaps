@@ -4,7 +4,14 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { listSnapshots, readSnapshot } from './blob.js';
 import { IntegrityError, IoError, ParseError } from './errors.js';
-import type { Attribution, AttributionEventKind, Snapshot, SnapshotKind } from './types.js';
+import type {
+  Attribution,
+  AttributionEventKind,
+  SessionCostSummary,
+  Snapshot,
+  SnapshotKind,
+  TurnRecord,
+} from './types.js';
 
 // Per spec/format.md §5.2 the schema file is canonical — implementations
 // MUST execute it verbatim. We read it from spec/schema/001_init.sql at
@@ -269,6 +276,182 @@ export class IndexDb {
       firstObservedAt: r.first_seen,
       lastObservedAt: r.last_seen,
     }));
+  }
+
+  // ── turn_metrics (v0.5.0; spec/format.md §10) ────────────────────────
+
+  /**
+   * Insert one TurnRecord row. Idempotent on the (session_id, turn_index)
+   * primary key — `INSERT OR IGNORE` so a repeat call with the same
+   * (session, index) is a no-op. Returns true when a new row was
+   * actually inserted, false when the PK collision short-circuited.
+   *
+   * Prefer `insertTurnMetricsBatch` for batch ingest — wraps a single
+   * transaction around N inserts.
+   */
+  insertTurnMetric(turn: TurnRecord): boolean {
+    const result = this.db
+      .prepare(
+        `INSERT OR IGNORE INTO turn_metrics
+           (session_id, turn_index, turn_type, model,
+            input_tokens, output_tokens,
+            cache_creation_input_tokens, cache_read_input_tokens,
+            tool_names_csv, is_sidechain,
+            attribution_skill, ingested_at, request_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        turn.sessionId, turn.turnIndex, turn.turnType, turn.model,
+        turn.inputTokens, turn.outputTokens,
+        turn.cacheCreationInputTokens, turn.cacheReadInputTokens,
+        turn.toolNamesCsv, turn.isSidechain,
+        turn.attributionSkill, turn.ingestedAt, turn.requestId,
+      );
+    return result.changes > 0;
+  }
+
+  /**
+   * Insert many TurnRecord rows under one transaction. Returns the
+   * count of rows that were actually new (INSERT OR IGNORE may
+   * silently skip PK collisions). Atomic: a throw mid-batch leaves
+   * `turn_metrics` unchanged.
+   */
+  insertTurnMetricsBatch(turns: ReadonlyArray<TurnRecord>): number {
+    if (turns.length === 0) return 0;
+    let added = 0;
+    tx(this.db, () => {
+      for (const t of turns) {
+        if (this.insertTurnMetric(t)) added++;
+      }
+    });
+    return added;
+  }
+
+  /**
+   * Highest stored turn_index for a session, or null if none stored.
+   * Caller passes `MAX(turn_index) + 1` (or 0) as the parser's
+   * startTurnIndex for idempotent incremental ingest.
+   */
+  maxTurnIndex(sessionId: string): number | null {
+    const row = this.db
+      .prepare('SELECT MAX(turn_index) AS m FROM turn_metrics WHERE session_id = ?')
+      .get(sessionId) as { m: number | null } | undefined;
+    if (row === undefined || row.m === null) return null;
+    return row.m;
+  }
+
+  /**
+   * Read every stored TurnRecord for a session, ordered by turn_index.
+   * Empty when the session has not been ingested.
+   */
+  turnsOf(sessionId: string): TurnRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT session_id, turn_index, turn_type, model,
+                input_tokens, output_tokens,
+                cache_creation_input_tokens, cache_read_input_tokens,
+                tool_names_csv, is_sidechain,
+                attribution_skill, ingested_at, request_id
+           FROM turn_metrics
+          WHERE session_id = ?
+          ORDER BY turn_index`,
+      )
+      .all(sessionId) as unknown as TurnMetricsRow[];
+    return rows.map(rowToTurnRecord);
+  }
+
+  /**
+   * Aggregate per-session cost summary. Returns null when no
+   * turn_metrics row exists for the session.
+   *
+   * Token totals sum across assistant turns only (user turns have
+   * null tokens; SQL SUM of NULL is 0). `tools` is a parsed roll-up
+   * of the comma-separated `tool_names_csv` values — the row form is
+   * lossless under (name, count) aggregation.
+   *
+   * `claudeCodeVersion` is read from the snapshot referenced by the
+   * session's earliest attribution row (first-observation-wins per
+   * spec/format.md §2.1). Null when the session has no attribution
+   * row, or when the snapshot pre-dates v0.5 and has the field NULL.
+   */
+  sessionCost(sessionId: string): SessionCostSummary | null {
+    const agg = this.db
+      .prepare(
+        `SELECT COUNT(*)                                               AS total_turns,
+                SUM(CASE WHEN turn_type='user'      THEN 1 ELSE 0 END) AS user_turns,
+                SUM(CASE WHEN turn_type='assistant' THEN 1 ELSE 0 END) AS assistant_turns,
+                COALESCE(SUM(input_tokens),                0)          AS input_tokens,
+                COALESCE(SUM(output_tokens),               0)          AS output_tokens,
+                COALESCE(SUM(cache_creation_input_tokens), 0)          AS cache_creation_input_tokens,
+                COALESCE(SUM(cache_read_input_tokens),     0)          AS cache_read_input_tokens
+           FROM turn_metrics
+          WHERE session_id = ?`,
+      )
+      .get(sessionId) as
+      | {
+          total_turns: number;
+          user_turns: number;
+          assistant_turns: number;
+          input_tokens: number;
+          output_tokens: number;
+          cache_creation_input_tokens: number;
+          cache_read_input_tokens: number;
+        }
+      | undefined;
+    if (agg === undefined || agg.total_turns === 0) return null;
+
+    const modelRows = this.db
+      .prepare(
+        `SELECT DISTINCT model FROM turn_metrics
+          WHERE session_id = ? AND model IS NOT NULL
+          ORDER BY model`,
+      )
+      .all(sessionId) as { model: string }[];
+
+    const csvRows = this.db
+      .prepare(
+        `SELECT tool_names_csv FROM turn_metrics
+          WHERE session_id = ? AND tool_names_csv IS NOT NULL`,
+      )
+      .all(sessionId) as { tool_names_csv: string }[];
+
+    const tools: Record<string, number> = {};
+    for (const r of csvRows) {
+      for (const name of r.tool_names_csv.split(',')) {
+        if (name.length === 0) continue;
+        tools[name] = (tools[name] ?? 0) + 1;
+      }
+    }
+
+    // Pull claudeCodeVersion from the earliest snapshot the session
+    // observed. `attributions` is keyed by (session_id, observed_at,
+    // event_kind); ORDER BY observed_at, event_kind takes the first
+    // — which is the same ordering trajectoryOf() returns.
+    const versionRow = this.db
+      .prepare(
+        `SELECT s.claude_code_version AS v
+           FROM attributions a
+           JOIN snapshots s ON s.id = a.snapshot_id
+          WHERE a.session_id = ?
+          ORDER BY a.observed_at, a.event_kind
+          LIMIT 1`,
+      )
+      .get(sessionId) as { v: string | null } | undefined;
+    const claudeCodeVersion = versionRow?.v ?? null;
+
+    return {
+      sessionId,
+      totalTurns: agg.total_turns,
+      userTurns: agg.user_turns,
+      assistantTurns: agg.assistant_turns,
+      models: modelRows.map((r) => r.model),
+      inputTokens: agg.input_tokens,
+      outputTokens: agg.output_tokens,
+      cacheCreationInputTokens: agg.cache_creation_input_tokens,
+      cacheReadInputTokens: agg.cache_read_input_tokens,
+      tools,
+      claudeCodeVersion,
+    };
   }
 
   // ── session_observation_cache (hot-path; not normative) ─────────────
@@ -537,6 +720,40 @@ function rowToAttribution(r: AttributionRow): Attribution {
     eventKind: r.event_kind as AttributionEventKind,
     source: r.source,
     noteText: r.note_text,
+  };
+}
+
+interface TurnMetricsRow {
+  session_id: string;
+  turn_index: number;
+  turn_type: 'user' | 'assistant';
+  model: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cache_creation_input_tokens: number | null;
+  cache_read_input_tokens: number | null;
+  tool_names_csv: string | null;
+  is_sidechain: 0 | 1;
+  attribution_skill: string | null;
+  ingested_at: string;
+  request_id: string | null;
+}
+
+function rowToTurnRecord(r: TurnMetricsRow): TurnRecord {
+  return {
+    sessionId: r.session_id,
+    turnIndex: r.turn_index,
+    turnType: r.turn_type,
+    model: r.model,
+    inputTokens: r.input_tokens,
+    outputTokens: r.output_tokens,
+    cacheCreationInputTokens: r.cache_creation_input_tokens,
+    cacheReadInputTokens: r.cache_read_input_tokens,
+    toolNamesCsv: r.tool_names_csv,
+    isSidechain: r.is_sidechain,
+    attributionSkill: r.attribution_skill,
+    ingestedAt: r.ingested_at,
+    requestId: r.request_id,
   };
 }
 

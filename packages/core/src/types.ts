@@ -139,6 +139,97 @@ export interface DiffOp {
   after?: Module;
 }
 
+// ── Session metrics (v0.5.0; spec/format.md §10) ────────────────────────
+
+/**
+ * One row in `turn_metrics` — one assistant or user JSONL turn after
+ * the strict whitelist parser filters it. The shape is normative per
+ * spec/format.md §10.1; new JSONL fields added by future Claude Code
+ * versions are EXCLUDED unless they are added to this type explicitly.
+ *
+ * Privacy-load-bearing: every field on this type is a non-content
+ * identifier or counter. No prompt text, tool input, tool result,
+ * thinking content, or system prompt is permitted (§10.2 forbidden
+ * whitelist). Adding a new field requires re-running W12.5.
+ */
+export interface TurnRecord {
+  sessionId: string;
+  /** 0-based; sequential index of emitted (user|assistant) rows. */
+  turnIndex: number;
+  turnType: 'user' | 'assistant';
+  /** Model id reported on the assistant turn (e.g. `claude-opus-4-7`). Null on user turns. */
+  model: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheCreationInputTokens: number | null;
+  cacheReadInputTokens: number | null;
+  /** Comma-separated list of tool names (canonical, including `mcp__server__tool`). Null when no tools fired this turn. */
+  toolNamesCsv: string | null;
+  /** 1 when the turn ran inside a subagent (Task tool); 0 for the main thread. */
+  isSidechain: 0 | 1;
+  /** Active skill name on the assistant turn, if any. Null otherwise. */
+  attributionSkill: string | null;
+  /** ISO 8601 UTC. Stamped by the ingester at insert time, not from the JSONL. */
+  ingestedAt: string;
+  /** Anthropic API request id for the turn (assistant only). Null when absent. */
+  requestId: string | null;
+}
+
+/**
+ * Aggregate roll-up of `turn_metrics` rows for one session. Exposed
+ * via `Repo.sessionCost(sessionId)`. Token counts are summed over
+ * assistant turns; user turns contribute to `userTurns` only.
+ *
+ * `claudeCodeVersion` is read from the snapshot blob at the session's
+ * first attribution (§2.1 first-observation-wins). Null when no
+ * attribution row exists for the session, or when the snapshot
+ * pre-dates v0.5.0.
+ *
+ * `tools` records call counts only — per spec/format.md §10.3,
+ * per-tool token attribution is NOT supportable.
+ */
+export interface SessionCostSummary {
+  sessionId: string;
+  totalTurns: number;
+  userTurns: number;
+  assistantTurns: number;
+  /** Distinct model ids observed on assistant turns. */
+  models: string[];
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+  /** Tool name → call count, summed across all assistant turns. */
+  tools: Record<string, number>;
+  claudeCodeVersion: string | null;
+}
+
+export interface IngestSessionOptions {
+  /**
+   * Force re-ingest from a specific turn (parser-bug recovery). Defaults
+   * to "resume from `MAX(turn_index) + 1`" — the standard idempotent
+   * incremental case.
+   */
+  sinceTurn?: number;
+  /**
+   * Parse the JSONL but write nothing. The returned record reflects what
+   * WOULD have been added.
+   */
+  dryRun?: boolean;
+}
+
+export interface IngestSessionResult {
+  sessionId: string;
+  /** New rows inserted by this call. Zero on a no-op idempotent re-run. */
+  added: number;
+  /** Rows already in the database that the parser also produced (idempotent prefix). */
+  skipped: number;
+  /** Snapshot of session-cost data after ingestion. Same shape as `Repo.sessionCost`. */
+  cost: SessionCostSummary;
+  /** True when the call was a dry-run; no rows were written. */
+  dryRun: boolean;
+}
+
 // Resolved HEAD: a symbolic ref pointing at a branch, a detached id, or
 // null on an empty repository whose default branch has no commit yet
 // (per spec/format.md §4.4).
