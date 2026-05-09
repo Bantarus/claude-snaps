@@ -79,6 +79,22 @@ describe('canonical fixture (Gate 1)', () => {
     expect(createHash('sha256').update(fixture).digest('hex')).toBe(FIXTURE_DIGEST);
   });
 
+  test('claudeCodeVersion exclusion holds: v0.5 fixture id == v0.4 fixture id (§9.9)', () => {
+    // The v0.5.0 test vector — the load-bearing property of the format
+    // bump per spec/format.md §9.9. A v0.4-shaped snapshot and the same
+    // snapshot with claudeCodeVersion added MUST produce identical
+    // canonical bytes and identical ids. This is what makes the bump
+    // a true minor (additive, reader-compatible) and what lets v0.4
+    // snapshots stay byte-stable through v0.5.
+    const v04Blob: Snapshot = TV_INPUT;
+    const v05Blob: Snapshot = { ...TV_INPUT, claudeCodeVersion: '2.1.131' };
+    const v04Bytes = canonicalBytes(stripExcluded(v04Blob as Record<string, unknown>));
+    const v05Bytes = canonicalBytes(stripExcluded(v05Blob as Record<string, unknown>));
+    expect(Buffer.from(v04Bytes).equals(Buffer.from(v05Bytes))).toBe(true);
+    expect(snapshotId(v04Blob)).toBe(snapshotId(v05Blob));
+    expect(snapshotId(v05Blob)).toBe(FIXTURE_ID);
+  });
+
   test('snapshotId of every example blob round-trips against its filename', () => {
     // For every example blob, recomputing the id from the on-disk JSON
     // (with `id` removed) must equal the filename's id segment.

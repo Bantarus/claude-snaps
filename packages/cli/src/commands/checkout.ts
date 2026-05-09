@@ -46,7 +46,7 @@ export async function cmdCheckout(parsed: ParsedArgs): Promise<number> {
     const liveLockHash = repo.apmLockHash();
     const liveLockfile = repo.apmLockfileContent();
     const liveId = snapshotId({
-      formatVersion: target.formatVersion ?? '0.4',
+      formatVersion: target.formatVersion ?? '0.5',
       parentIds: target.parentIds,
       branch: target.branch,
       kind: target.kind,

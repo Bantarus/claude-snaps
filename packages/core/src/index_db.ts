@@ -33,8 +33,8 @@ const SCHEMA_FILES: Array<{ from: number; file: string; to: number }> = [
   { from: 6, file: '007_session_metrics.sql',            to: 7 },
 ];
 const CURRENT_SCHEMA_VERSION = 7;
-const HARNESS_FORMAT_VERSION = '0.4';
-const WRITER_NAME = '@harness/core@0.4.0';
+const HARNESS_FORMAT_VERSION = '0.5';
+const WRITER_NAME = '@harness/core@0.5.0';
 
 // node:sqlite emits an ExperimentalWarning on first DatabaseSync() call in
 // Node 22-24. Suppress only that specific warning so we don't pollute

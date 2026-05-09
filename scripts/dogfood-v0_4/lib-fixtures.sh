@@ -158,13 +158,40 @@ fixture_corrupted_blob() {
   fixture_lineage_3_snapshots
   (
     cd "$FIXTURE_DIR"
-    local first_blob
-    first_blob=$(find .harness/snapshots -type f -name '*.json' | head -1)
-    if [ -z "$first_blob" ]; then
-      echo "fixture_corrupted_blob: no snapshot blob found" >&2
+    # Corrupt HEAD's parent blob — deterministically traversed by
+    # `harness log` when rendering the HEAD row's diff summary, so
+    # readSnapshot fires and surfaces the integrity error. Picking
+    # "first blob alphabetically" was id-ordering-dependent and would
+    # silently land on the init blob (which has no children to walk
+    # AS a parent), letting `harness log` complete without surfacing
+    # the corruption — see W7.3.
+    local head_id; head_id=$(cat .harness/refs/heads/main 2>/dev/null)
+    if [ -z "$head_id" ]; then
+      echo "fixture_corrupted_blob: no HEAD on main" >&2
       return 1
     fi
-    printf '{}' > "$first_blob"
+    local head_blob=".harness/snapshots/${head_id:0:2}/${head_id:2}.json"
+    if [ ! -f "$head_blob" ]; then
+      echo "fixture_corrupted_blob: HEAD blob missing at $head_blob" >&2
+      return 1
+    fi
+    local parent_id
+    parent_id=$(python3 -c "
+import json, sys
+with open(sys.argv[1]) as f: snap = json.load(f)
+parents = snap.get('parentIds', [])
+print(parents[0] if parents else '', end='')
+" "$head_blob")
+    if [ -z "$parent_id" ]; then
+      echo "fixture_corrupted_blob: HEAD has no parent (lineage_3 should have produced one)" >&2
+      return 1
+    fi
+    local parent_blob=".harness/snapshots/${parent_id:0:2}/${parent_id:2}.json"
+    if [ ! -f "$parent_blob" ]; then
+      echo "fixture_corrupted_blob: parent blob missing at $parent_blob" >&2
+      return 1
+    fi
+    printf '{}' > "$parent_blob"
   )
 }
 

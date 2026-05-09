@@ -17,9 +17,9 @@
   "properties": {
     "formatVersion": {
       "type": "string",
-      "description": "Optional; defaults to \"0.4.0\" if absent. v0.4.x writers MAY emit \"0.4\" (the family default) or a more specific patch like \"0.4.0\". Major version mismatch is a hard error per format.md §9.",
+      "description": "Optional; defaults to \"0.5.0\" if absent on a v0.5+ writer. v0.5.x writers MAY emit \"0.5\" (the family default) or a more specific patch like \"0.5.0\". Older writers (v0.4.x, v0.3.x) emit their own family. Major version mismatch is a hard error per format.md §9.",
       "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?$",
-      "default": "0.4.0"
+      "default": "0.5.0"
     },
     "id": {
       "type": "string",

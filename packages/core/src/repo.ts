@@ -513,7 +513,7 @@ export class Repo {
 
     // Change path: write a new snapshot, advance branch ref, attribute.
     const baseBlob: Omit<Snapshot, 'id'> = {
-      formatVersion: '0.4',
+      formatVersion: '0.5',
       parentIds: headId === null ? [] : [headId],
       branch: branchName,
       kind: headId === null ? 'init' : 'auto',
