@@ -68,13 +68,44 @@ context.
 5. **Wait for user confirmation otherwise.** If the user says "yes"
    / "proceed" / "go ahead", run `harness reproduce <ref>` (no
    `--dry-run`). If anything else, abort and report.
-6. **Final report.** One paragraph (3–5 sentences):
-   - What HEAD is at now.
-   - Whether the reproduce succeeded or failed.
+6. **Capture the real-reproduce subprocess result completely.** Record
+   the exit code, the FULL stdout, and the FULL stderr of
+   `harness reproduce <ref>`. Do not parse only the last line. Do
+   not assume success from the presence of "HEAD now at <id>" in
+   stdout — the CLI's `harness reproduce` may print partial progress
+   even when it exits non-zero.
+7. **VERIFY HEAD post-reproduce — this is mandatory, not optional.**
+   Before writing your final report, run `cat .harness/HEAD` and
+   record the value verbatim. Two cases:
+   - The recorded value is exactly the target snapshot's full 40-hex
+     id (`harness reproduce` resolves the ref and writes the literal
+     id to HEAD on success per spec §6.1) → reproduce SUCCEEDED.
+   - The recorded value is anything else (still `ref:
+     refs/heads/<branch>`, or a different snapshot id) → reproduce
+     FAILED at the HEAD-advance step regardless of what stdout
+     suggested. The §6.1 contract says HEAD advances ONLY on full
+     success; if HEAD didn't advance, you MUST report failure.
+   To resolve the target's full id when the user passed a tag /
+   branch / prefix, parse the first line of `harness reproduce <ref>
+   --dry-run` output (format: `<ref> → <40-hex>`) OR run
+   `harness log --limit 50 | grep <prefix>` and read the displayed
+   id, then expand via `harness checkout <id> --dry-run` if needed.
+   If you cannot resolve the target id, fall back to: trust HEAD-
+   verification only against the dry-run's `→ <id>` line printed in
+   step 1.
+8. **Final report — drive from observed state, not from stdout
+   claims.** One paragraph (3–5 sentences):
+   - What HEAD ACTUALLY is now (verbatim from step 7's
+     `cat .harness/HEAD`).
+   - Whether reproduce succeeded (HEAD = target id) or failed
+     (HEAD ≠ target id, or non-zero exit).
    - The backup path (always — even on success, the user may want
      it).
-   - If failed: the failure-mode label from the §6.1 table and the
-     recovery command.
+   - If failed: the failure-mode label from the §6.1 table that
+     best matches the captured stderr/exit code, the recovery
+     command, AND the literal token `PILOT_PARTIAL_STATE` so the
+     `/harness:status` divergence detector and the user's automation
+     can grep for it.
 
 ## Specific cases to handle
 
