@@ -50,7 +50,7 @@ w11_2_v02_blob_refused() {
     tpl.createdAt = "2099-02-01T00:00:00.000Z";
     delete tpl.id;
     function canon(v) { if (v===null||typeof v!=="object") return v; if (Array.isArray(v)) return v.map(canon); const s={}; for (const k of Object.keys(v).sort()) s[k]=canon(v[k]); return s; }
-    const EX = ["id","createdAt","codePin","model","permissionMode"];
+    const EX = ["id","createdAt","codePin","model","permissionMode","claudeCodeVersion"];
     const stripped = { ...tpl };
     for (const k of EX) delete stripped[k];
     const bytes = Buffer.from(JSON.stringify(canon(stripped)), "utf-8");

@@ -101,7 +101,7 @@ w10_3_synthetic_merge_node() {
       for (const k of Object.keys(v).sort()) sorted[k] = canonicalize(v[k]);
       return sorted;
     }
-    const EXCLUDED = ["id","createdAt","codePin","model","permissionMode"];
+    const EXCLUDED = ["id","createdAt","codePin","model","permissionMode","claudeCodeVersion"];
     const stripped = { ...tpl };
     for (const k of EXCLUDED) delete stripped[k];
     const bytes = Buffer.from(JSON.stringify(canonicalize(stripped)), "utf-8");
