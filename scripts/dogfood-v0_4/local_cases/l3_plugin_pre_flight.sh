@@ -243,3 +243,42 @@ YAML
   assert_dir_exists "$cdir/apm_modules/_local/$(basename "$pdir")" "plugin staged in apm_modules/_local/"
 }
 register_case "L3.7 DRIFT-DETECT: APM 0.8.11 hybrid install merges only hooks; primitives NOT deployed (limitation)" l3_7_apm_hybrid_only_merges_hooks
+
+# L3.8 — DRIFT-DETECT (failure mode lock): a skill with `allowed-tools`
+# in its frontmatter fails to load its BODY in Claude Code 2.1.128. The
+# description still surfaces (so the skill is "discovered"), but the
+# Skill tool errors when Claude tries to load body content. This locks
+# the empirical reality discovered while authoring harness-cli (step 3,
+# 2026-05-09): the original v0.5 plan's `allowed-tools: Bash(harness *)
+# Bash(harness-hook *)` cannot be implemented under 2.1.128 — all four
+# plugin skills must omit the field and grant Bash via CLI flag or
+# .claude/settings.json instead. When the host fixes this, the test
+# turns red and the allowed-tools line can be restored.
+#
+# Test mechanism: build two skills — one WITH allowed-tools and one
+# WITHOUT — and probe each. The without-skill should return its body
+# canary; the with-skill should NOT (its body is unreachable).
+l3_8_skill_allowed_tools_blocks_body_load() {
+  local pdir; pdir=$(_l3_build_probe_plugin l38 0.0.1)
+  local cwd; cwd=$(mktemp -d "$CIP_SCRATCH/l38-cwd.XXXXXX")
+  # Augment the scaffold with a second skill that has allowed-tools.
+  mkdir -p "$pdir/skills/blocked-skill"
+  cat > "$pdir/skills/blocked-skill/SKILL.md" <<'MD'
+---
+name: blocked-skill
+description: "L3 probe: skill with allowed-tools. Use when the user says 'l3 blocked canary'."
+allowed-tools: Bash(echo *)
+---
+
+When triggered, output the literal string `L3_CANARY_BLOCKED_BODY`.
+MD
+  # Prompt for both canaries. The unblocked one should return; the
+  # blocked one should NOT (its body fails to load).
+  _l3_claude_p_plugin "$pdir" "$cwd" "Tell me the l3 canary string and the l3 blocked canary string. If you cannot load a skill, say so explicitly." > "$cwd/out.txt" 2>&1
+  assert_exit 0 $? "claude -p exits 0 even with mixed skills"
+  assert_file_contains "$cwd/out.txt" "L3_CANARY_SKILL_BODY" "skill WITHOUT allowed-tools loads its body"
+  if grep -q "L3_CANARY_BLOCKED_BODY" "$cwd/out.txt"; then
+    _assert_fail "skill WITH allowed-tools also loaded — failure mode 2 may be fixed; restore allowed-tools across plugin skills"
+  fi
+}
+register_case "L3.8 DRIFT-DETECT: skill with allowed-tools fails body load (CC 2.1.128); restore field when this turns red" l3_8_skill_allowed_tools_blocks_body_load

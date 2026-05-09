@@ -405,27 +405,42 @@ same event), but it's not data-loss-critical. (Drift detector: **L3.4**.)
 ### Probe 6 — `allowed-tools` enforcement
 
 **Q.** Is `Bash(harness *)` accepted as a permission grant on slash-
-command frontmatter? Does it pre-approve at the Claude Code permission
-layer?
+command or skill frontmatter? Does it pre-approve at the Claude Code
+permission layer?
 
-**A.** **Drift / known limitation**: in `-p` mode (Claude Code 2.1.128),
-slash-command `allowed-tools: Bash(<pattern>)` frontmatter is **silently
-ignored**. The CLI flag `--allowed-tools "Bash(cat *)"` is also ignored
-under default permission mode. Only the **bare** `--allowed-tools Bash`
-or `--permission-mode bypassPermissions` actually grants Bash
-permission. `echo` happens to succeed without permission grant because
-it's on the implicit safe-Bash list — this masks the failure for trivial
-commands. **Implication for the plugin:** the planned `Bash(harness *)`
-on `harness-cli` skill frontmatter and the per-command `allowed-tools`
-in `commands/*.md` may not reduce permission prompts in interactive
-mode either. Verify empirically once the plugin is loaded in a real
-interactive session (Gate P3 / P4 / P5). If frontmatter pattern grants
-remain ineffective, the plugin docs need to instruct users to run
-`claude --allowed-tools Bash --plugin-dir ...` or grant via
-`.claude/settings.json`. **No drift detector** (the test is
-deterministic but the failure mode is at runtime, not authoring time —
-adding an L3.x case here would just lock the bug, not catch a future
-regression).
+**A.** **Drift, two failure modes** (Claude Code 2.1.128):
+
+1. **Slash-command frontmatter `allowed-tools: Bash(<pattern>)`** is
+   **silently ignored** in `-p` mode. The CLI flag `--allowed-tools
+   "Bash(cat *)"` is also ignored under default permission mode. Only
+   the **bare** `--allowed-tools Bash` or `--permission-mode
+   bypassPermissions` actually grants Bash permission. `echo` happens
+   to succeed without permission grant because it's on the implicit
+   safe-Bash list — this masks the failure for trivial commands.
+
+2. **Skill frontmatter `allowed-tools: <anything>`** is **worse**:
+   discovered while authoring `harness-cli` skill (step 3, 2026-05-09).
+   Any value — bare `Bash`, parenthesized `Bash(harness *)`, or
+   YAML-list `[Bash(...), Bash(...)]` — causes Claude Code to **fail
+   loading the skill body entirely**. The skill's description still
+   surfaces in the slash-command list, but the Skill tool errors when
+   Claude tries to load the body. Workaround: omit the field. The
+   `harness-cli` skill ships without it; users grant Bash via CLI flag
+   or `.claude/settings.json`.
+
+**Implication for the plugin:** the original implementation prompt's
+"Frontmatter: plan doc §Skills verbatim, including `allowed-tools:
+Bash(harness *) Bash(harness-hook *)`" cannot be implemented as
+written. **All four skills omit `allowed-tools`.** Document the
+permission-grant workaround in `plugin/README.md` (step 10): users
+who want prompt-free harness commands run `claude --allowed-tools
+Bash --plugin-dir ...` or maintain a `permissions.allow` block in
+`.claude/settings.json`.
+
+(Drift detector: **L3.8** locks failure mode 2 — a skill with
+`allowed-tools` cannot be loaded by 2.1.128. When the host fixes
+this, L3.8 turns red and the `allowed-tools` line can be restored
+across all four skills.)
 
 ### Probe 7 — `disable-model-invocation`
 
