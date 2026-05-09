@@ -1,0 +1,8 @@
+{
+  "name": "harness",
+  "version": "0.5.0",
+  "description": "Snapshot and reproduce your .claude/ composition. Tracks every change to skills, agents, settings.json, and APM-managed primitives via content-addressable lineage. APM-driven reproducer with subtractive contract (spec/format.md §6.1). v0.5.0 adds session-metrics ingestion (turn_metrics, session-cost) with a strict privacy whitelist (spec/format.md §10.2).",
+  "author": { "name": "Bantarus" },
+  "homepage": "https://github.com/bantarus/claude-snaps",
+  "repository": "https://github.com/bantarus/claude-snaps"
+}
