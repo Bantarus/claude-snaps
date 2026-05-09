@@ -323,8 +323,241 @@ spec-grounded answers.
 
 ## Verified pins (plugin)
 
-> Fill this in during step 0. One subsection per probe; each
-> subsection has the question, the observed answer, and a
-> reference to the locked drift detector.
+Probed prospectively on **2026-05-09** against **Claude Code 2.1.128**
+(`~/.local/bin/claude`) and **APM 0.8.11**. Each probe used
+a throwaway scaffold under `$CIP_SCRATCH/l3-probe-plugin-*/`. Locked
+answers are codified at
+[scripts/dogfood-v0_4/local_cases/l3_plugin_pre_flight.sh](../scripts/dogfood-v0_4/local_cases/l3_plugin_pre_flight.sh)
+(7 drift detectors, all green; ran inside the 17-case local-observe
+suite alongside L1+L2).
 
-(empty until step 0 completes)
+### Probe 1 — Plugin discovery
+
+**Q.** Does `claude --plugin-dir <abs-path>` load the directory's
+primitives without `claude /plugin install`? Surfacing in `/help`,
+`/agents`, the skill list?
+
+**A.** Yes. `claude --plugin-dir <abs> -p "..."` works directly in
+non-interactive mode; no install step. Slash commands surface as
+`/<plugin-name>:<command>` and the model can enumerate them. Skills
+also surface as slash commands under the same namespace. (Drift detector:
+**L3.1**.)
+
+### Probe 2 — Namespace prefix
+
+**Q.** Does `/harness:status` resolve when plugin name is `harness` and
+the file is `commands/harness-status.md`? What about `commands/status.md`?
+
+**A.** Filename stem becomes the command name; plugin name is the
+prefix only — never concatenated. `commands/status.md` →
+`/harness-probe:status`. `commands/probe-status.md` →
+`/harness-probe:probe-status`. **For the harness plugin, name files
+WITHOUT the `harness-` prefix** (e.g. `commands/status.md`,
+`commands/snap.md`) so they resolve to `/harness:status`,
+`/harness:snap`. The original [plugin-implementation-prompt.md L107](plugin-implementation-prompt.md#L107)
+inventory lists files as `harness-snap.md`, `harness-status.md` etc. —
+under the verified rule, those would resolve to `/harness:harness-snap`.
+**Rename to `snap.md`, `status.md`, `trajectory.md`, `explain.md`,
+`restore.md`** before authoring step 8. (Drift detector: **L3.2**.)
+
+### Probe 3 — Skill triggering
+
+**Q.** Does Claude actually load a skill from description-match, or is
+the matcher too loose / too tight?
+
+**A.** Description-match works empirically. A query "tell me the probe
+canary skill canary string" loaded the `probe-skill` skill (description
+mentions "probe canary skill"), and the body's canary token was
+returned. The matcher is description-driven (per docs); body content is
+NOT used for trigger matching. Manually probed; no drift detector
+(LLM-driven, non-deterministic — re-test by running the kickoff's Gate
+P5 question after authoring `harness-fundamentals`).
+
+### Probe 4 — Subagent activation
+
+**Q.** Does Claude route to a subagent based on description matching?
+What happens if no description matches?
+
+**A.** Description-match works for subagents on explicit invocation
+("Use the probe-agent subagent..."). When no description matches,
+Claude answers in the main context without erroring. **Implication for
+`harness-archeologist` and `harness-reproducer-pilot`:** their
+description fields must clearly own their domain (lineage queries,
+reproduction operations) so Claude routes confidently. Manually probed;
+no drift detector (LLM-driven; re-test via Gates P3, P4 after authoring
+the subagents).
+
+### Probe 5 — `hooks/hooks.json` activation
+
+**Q.** Are plugin hooks merged with project-level
+`.claude/settings.json` hooks, or do they replace? Conflict resolution?
+
+**A.** **Both fire (additive merge).** Project-level hook fires first,
+plugin hook second. No replacement, no conflict error. The kickoff's
+open question 2 (migration for users who already ran `harness
+install-hook`) is resolved: **plugin install does NOT clobber the
+project-level hook config**. The plan-doc concern about losing
+`harness install-hook` state on plugin install is empirically false. A
+duplicate-detection startup check in `harness-fundamentals` is still a
+nice-to-have (so users don't unknowingly fire the hook twice for the
+same event), but it's not data-loss-critical. (Drift detector: **L3.4**.)
+
+### Probe 6 — `allowed-tools` enforcement
+
+**Q.** Is `Bash(harness *)` accepted as a permission grant on slash-
+command frontmatter? Does it pre-approve at the Claude Code permission
+layer?
+
+**A.** **Drift / known limitation**: in `-p` mode (Claude Code 2.1.128),
+slash-command `allowed-tools: Bash(<pattern>)` frontmatter is **silently
+ignored**. The CLI flag `--allowed-tools "Bash(cat *)"` is also ignored
+under default permission mode. Only the **bare** `--allowed-tools Bash`
+or `--permission-mode bypassPermissions` actually grants Bash
+permission. `echo` happens to succeed without permission grant because
+it's on the implicit safe-Bash list — this masks the failure for trivial
+commands. **Implication for the plugin:** the planned `Bash(harness *)`
+on `harness-cli` skill frontmatter and the per-command `allowed-tools`
+in `commands/*.md` may not reduce permission prompts in interactive
+mode either. Verify empirically once the plugin is loaded in a real
+interactive session (Gate P3 / P4 / P5). If frontmatter pattern grants
+remain ineffective, the plugin docs need to instruct users to run
+`claude --allowed-tools Bash --plugin-dir ...` or grant via
+`.claude/settings.json`. **No drift detector** (the test is
+deterministic but the failure mode is at runtime, not authoring time —
+adding an L3.x case here would just lock the bug, not catch a future
+regression).
+
+### Probe 7 — `disable-model-invocation`
+
+**Q.** Does `disable-model-invocation: true` block silent model
+invocation, only hide from `/help`, or both? Can the user still type
+the slash directly?
+
+**A.** Sets two effects: (a) command is **hidden from the model's
+slash-command enumeration** (probed via "list all slash commands" — the
+flagged command was absent from the model's response); (b) the model
+**cannot SlashCommand-tool-invoke it** (responds with "CANNOT_AUTO_INVOKE"
+shape when asked to). User-typed `/harness-probe:noinvoke` works
+normally and executes the body. This is the right behavior for
+`/harness:snap` and `/harness:restore` which are intentionally
+user-only per the original prompt's frontmatter. (Drift detector:
+**L3.5**.)
+
+### Probe 8 — APM hybrid mode (DRIFT vs original plan)
+
+**Q.** Does `apm install` against a Claude Code plugin directory
+correctly install primitives into the consuming project's `.claude/`?
+
+**A.** **NO. Significant drift vs the original plugin-implementation-
+prompt.md Gate P6.** APM 0.8.11 against a plugin layout
+(`.claude-plugin/plugin.json` + top-level `skills/`, `commands/`,
+`agents/`, `hooks/`) **only merges `hooks/hooks.json` into
+`.claude/settings.json`**. Plugin `skills/`, `commands/`, and `agents/`
+stay in `apm_modules/_local/<plugin-name>/` and are **NOT deployed**
+into `.claude/skills/`, `.claude/commands/`, `.claude/agents/`. The
+"hybrid" `type:` in apm.yml does not change this. **The kickoff's "APM
+hybrid distribution" track is partially blocked.** Three forward
+options:
+
+  **(α)** **Drop the APM track for v0.5.0** (recommended). Distribute
+  via `--plugin-dir` (local dev) and Claude Code's marketplace
+  `/plugin install` (production). Document this in
+  [docs/plugin-plan.md](plugin-plan.md) hard-pin 8 as an interim step;
+  re-evaluate APM hybrid when 0.9+ ships or when the plugin format adds
+  primitive-deployment hooks for APM.
+
+  **(β)** **Author the package as `.apm/`-source layout instead of
+  plugin layout.** This trades plugin-format compatibility for APM
+  deployment. Loses `claude --plugin-dir` and `/plugin install`
+  workflows. **Not recommended** — the plugin format is the user-
+  facing primitive in 2.1.x.
+
+  **(γ)** **Author both layouts** (`plugin/` + `.apm/`-source mirror).
+  Doubles authoring overhead. **Not recommended** for v0.5.0; revisit
+  if APM adoption demands it.
+
+**Default recommendation: (α).** Surface this finding to the user
+before attempting the original Gate P6. Drop the v0.5.0 plugin's
+`apm.yml` from scope; keep the plugin format clean. (Drift detector:
+**L3.7** — locks the limitation; turns red if APM 0.9+ starts
+deploying primitives, at which point (α) can revert.)
+
+### Probe 9 — SessionEnd hook timing
+
+**Q.** When `harness ingest-session` is wired to `SessionEnd` via
+plugin hooks, is the JSONL fully flushed by the time the hook fires?
+
+**A.** Yes. SessionEnd hook fires **+60 ms after** the last assistant
+turn lands in the JSONL transcript (measured 2026-05-09: last assistant
+turn `12:13:50.283Z`, SessionEnd hook `12:13:50.343Z`). The host writes
+the assistant turn before firing SessionEnd, then a `last-prompt`
+trailing line (no timestamp) follows — file is byte-stable when the
+hook fires. **Auto-ingest via SessionEnd is viable from a transcript-
+completeness standpoint.**
+
+This unblocks the kickoff's "hooks/hooks.json shape" open question
+(option (a) — wire SessionEnd to `harness ingest-session`). Remaining
+concerns are non-empirical: privacy UX (auto-ingest of every session)
+and the latency budget for blocking session shutdown on a multi-second
+JSONL parse + DB insert. The latency concern can be sidestepped by
+running `harness ingest-session` with `nohup ... &` from the hook
+(`harness-hook` would need a `--background` flag — file as v0.5.x
+backlog if option (a) is chosen). The privacy concern still requires a
+user conversation. **Default for v0.5.0 plugin shell: stick with (b)
+SessionStart + UserPromptSubmit only**, surface (a) as v0.5.x scope.
+(Drift detector: **L3.3**.)
+
+### Probe 10 — Plugin↔CLI version mismatch
+
+**Q.** What happens when `plugin.json.version` is `0.5.0` but the
+installed `harness` CLI is v0.4.x? Do hooks fail loudly, silently, or
+partially?
+
+**A.** Plugin loader does **NOT enforce semver compatibility**. Loaded
+a plugin with `version: 999.0.0-mismatched` — hooks fired, slash
+commands resolved, skills loaded, no error or warning. **Plugin↔CLI
+version mismatch is invisible at the loader layer.** The user-visible
+failure mode is at runtime: when `harness-hook` (the CLI binary the
+plugin's hooks invoke) has different semantics from what the plugin
+docs promise. That's a usability concern handled at the CLI level
+(harness CLI can refuse to run if formatVersion diverges from what its
+bundled migrations support — already enforced via §9 spec).
+
+The kickoff's open question 7 ("plugin↔CLI version coupling") simplifies
+to: **plugin.json.version is documentation, not enforcement.** The
+original plan-doc default (c) "Document, don't enforce" remains correct.
+(Drift detector: **L3.6**.)
+
+### Implications for "Order of operations"
+
+Step 0 (this section) is complete. Adjustments propagated forward:
+
+- **Step 1** (plugin shell + hooks): adopt naming convention from
+  Probe 2 — `commands/snap.md`, `commands/status.md` etc. (NOT
+  `commands/harness-snap.md`).
+- **Step 8** (slash commands): five commands named per Probe 2 rule;
+  `/harness:cost` (kickoff's new question 7) added per the kickoff's
+  default recommendation (a).
+- **Step 9** (`apm.yml` hybrid + Gate P6): **DROPPED** for v0.5.0 per
+  Probe 8 finding. Distribute via `--plugin-dir` and Claude Code
+  marketplace only. Step 9 becomes a no-op; renumber subsequent steps.
+- **Open question 6** (auto-ingest via SessionEnd): default to (b)
+  remains correct; (a) is technically viable but needs UX conversation.
+- **Open question 2** (existing `harness install-hook` migration): per
+  Probe 5, plugin hooks merge with project hooks — no clobber risk;
+  the original plan-doc concern is empirically resolved.
+- **Probe 6 caveat** (allowed-tools): re-verify in interactive mode
+  during Gate P1 / P3 / P4 / P5. If frontmatter pattern grants are
+  ineffective in interactive too, instruct users to run with
+  `--allowed-tools Bash` or grant via `.claude/settings.json`.
+
+### Drift detectors
+
+The 7 cases at
+[scripts/dogfood-v0_4/local_cases/l3_plugin_pre_flight.sh](../scripts/dogfood-v0_4/local_cases/l3_plugin_pre_flight.sh)
+fire `claude -p --plugin-dir` against synthesized scaffolds. Run via
+`bash scripts/dogfood-v0_4/local-observe.sh`. They lock the
+deterministic answers (loader, namespace, hooks, version) so plugin
+work doesn't drift. The non-deterministic probes (skill / subagent
+activation) re-verify via the manual Gates P3-P5 once the actual
+plugin authors them.
