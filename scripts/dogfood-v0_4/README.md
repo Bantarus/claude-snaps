@@ -237,9 +237,9 @@ scripts/dogfood-v0_4/
 ├── reset.sh                ← live-walkthrough setup (PLAYBOOK.md only)
 ├── setup-apm-fixture.sh    ← live-walkthrough APM fixture (PLAYBOOK.md only)
 ├── audit.sh                ← live-walkthrough audit script (PLAYBOOK.md only)
-├── cases/                  ← synthesized cases (W1–W11) for ci-playbook.sh
+├── cases/                  ← synthesized cases (W1–W12) for ci-playbook.sh
 │   ├── w1_cold_start.sh        (5 cases)
-│   ├── w2_hook_firing.sh       (7 cases)
+│   ├── w2_hook_firing.sh      (10 cases — incl. W2.8/9/10 drift detectors)
 │   ├── w3_snap.sh              (5 cases)
 │   ├── w4_queries.sh          (10 cases)
 │   ├── w5_refs.sh             (10 cases)
@@ -248,11 +248,58 @@ scripts/dogfood-v0_4/
 │   ├── w8_install_hook.sh      (5 cases)
 │   ├── w9_apm.sh               (4 cases)
 │   ├── w10_dag.sh              (3 cases)
-│   └── w11_format_compat.sh    (4 cases)
+│   ├── w11_format_compat.sh    (4 cases)
+│   └── w12_session_metrics.sh (12 cases — v0.5.0 ingestion + privacy)
 └── local_cases/            ← real-Claude cases (L0–Ln) for local-observe.sh
     ├── l0_smoke.sh             (1 case — plumbing check)
-    └── l1_basic.sh             (4 cases — startup/resume/model/dedup)
+    ├── l1_basic.sh             (4 cases — startup/resume/model/dedup)
+    ├── l2_v0_5_pre_flight.sh   (3 cases — v0.5 host-contract drift detectors)
+    └── l2_session_metrics.sh   (3 cases — v0.5 ingestion correctness + privacy)
 ```
 
-CI playbook: **71 cases** across 11 workflows.
-Local observe: **5 cases** (1 smoke + 4 real-session).
+CI playbook: **86 cases** across 12 workflows.
+Local observe: **10 cases** (1 smoke + 4 L1 + 3 L2 pre-flight + 3 L2 session-metrics).
+
+### W12 (v0.5.0 — session metrics + transcript ingestion)
+
+W12.1 – W12.12 verify the v0.5.0 `harness ingest-session` /
+`harness session-cost` CLI surface against synthesized JSONL fixtures.
+Mirrors unit coverage in `packages/core/test/ingest.test.ts` +
+`packages/core/test/privacy_fuzz.test.ts`; the shell layer regresses
+the full binary path including SQLite migration 007.
+
+| Gate | What |
+|---|---|
+| W12.1 | 5-turn fixture: rows + shape (per-row spot checks on tokens/users/asst counts) |
+| W12.2 | idempotent: re-ingest unchanged file adds zero rows |
+| W12.3 | append 2 turns; re-ingest adds exactly 2 |
+| W12.4 | mcp__server__tool names kept verbatim end-to-end |
+| W12.5 | **privacy fuzz — ZERO canary leakage** (load-bearing per spec/format.md §10.2) |
+| W12.6 | isSidechain=true persists as is_sidechain=1 |
+| W12.7 | pre-v0.5 snapshot immutable under ingestion |
+| W12.8 | v0.5+ snapshot immutable across mid-session version drift |
+| W12.9 | session-cost reports correct per-session totals |
+| W12.10 | session-cost --by-tool: call counts + §10.3 limitation surfaced |
+| W12.11 | ingest-session --all skips sessions with no transcript on disk |
+| W12.12 | v0.5 reader tolerates v0.4.x blob without claudeCodeVersion |
+
+### L2 (real claude -p — v0.5 contract verification)
+
+L2.1, L2.2, L2.3 (`l2_v0_5_pre_flight.sh`) are **drift detectors**:
+they turn red when Claude Code changes its hook event inventory,
+project-dir encoding rule, or `attributionSkill` semantics. Locked
+prospectively against Claude Code 2.1.131 on 2026-05-08; see
+docs/session-metrics-prompt.md "Verified pins".
+
+L2.4, L2.5, L2.6 (`l2_session_metrics.sh`) are **ingestion gates**:
+they drive a real `claude -p`, run `harness ingest-session` against
+the resulting JSONL, and verify token-count + privacy correctness.
+
+| Gate | What |
+|---|---|
+| L2.1 | hook event inventory = [SessionStart, UserPromptSubmit, Stop, SessionEnd] |
+| L2.2 | project-dir encoding = non-alnum-to-single-dash, no collapsing |
+| L2.3 | attributionSkill is null on assistant turns when no skill active |
+| L2.4 | ingest real session: row count = JSONL message-line count |
+| L2.5 | ingest real session: token totals match JSONL usage blocks |
+| L2.6 | **real-session prompt canary does NOT leak into harness storage** |
