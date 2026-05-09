@@ -271,3 +271,23 @@ function boolToFlag(v: unknown): 0 | 1 {
  * parser, not the database" explicit at the type level.
  */
 export type TurnRecordCandidate = TurnRecord;
+
+// ── project-dir encoding (spec/format.md §10.5; drift detector L2.2) ───
+
+/**
+ * Encode an absolute project path to its host-encoded directory name
+ * under `~/.claude/projects/`. The rule, locked by drift detector L2.2:
+ *
+ *   each char ∈ [a-zA-Z0-9] kept; everything else → '-'
+ *   no collapsing of consecutive dashes
+ *   per-character (multi-byte UTF-8 chars become one '-' each, NOT
+ *     one '-' per byte — JavaScript strings iterate by code unit,
+ *     and the regex below operates per code unit, which matches the
+ *     observed Claude Code behavior).
+ *
+ * Example: `~/DEV/claude-snaps`
+ *       → `-home-bantarus-DEV-claude-snaps`
+ */
+export function encodeProjectDir(absPath: string): string {
+  return absPath.replace(/[^a-zA-Z0-9]/g, '-');
+}

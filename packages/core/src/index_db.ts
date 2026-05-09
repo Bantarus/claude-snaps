@@ -258,6 +258,44 @@ export class IndexDb {
   }
 
   /**
+   * Distinct session ids with at least one `turn_metrics` row.
+   * Ordered by earliest ingested_at ASC. Used by `harness session-cost
+   * --all` — distinct from `distinctSessionIds()` which is keyed on
+   * attribution rows. A session can have turn_metrics without
+   * attribution (backfill) or attribution without turn_metrics (the
+   * normal pre-ingest state).
+   */
+  distinctIngestedSessionIds(): string[] {
+    const rows = this.db
+      .prepare(
+        `SELECT session_id, MIN(ingested_at) AS first_ing
+           FROM turn_metrics
+          GROUP BY session_id
+          ORDER BY first_ing ASC`,
+      )
+      .all() as { session_id: string; first_ing: string }[];
+    return rows.map((r) => r.session_id);
+  }
+
+  /**
+   * Distinct session ids that have any attribution row, ordered by
+   * earliest observation timestamp ascending. Used by `harness
+   * ingest-session --all` to enumerate sessions that may have a
+   * transcript JSONL on disk.
+   */
+  distinctSessionIds(): Array<{ sessionId: string; firstObservedAt: string }> {
+    const rows = this.db
+      .prepare(
+        `SELECT session_id, MIN(observed_at) AS first_seen
+           FROM attributions
+          GROUP BY session_id
+          ORDER BY first_seen ASC`,
+      )
+      .all() as { session_id: string; first_seen: string }[];
+    return rows.map((r) => ({ sessionId: r.session_id, firstObservedAt: r.first_seen }));
+  }
+
+  /**
    * Inverse of trajectoryOf: which sessions observed this snapshot,
    * with their first and last observation timestamps.
    */

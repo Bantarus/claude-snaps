@@ -11,6 +11,8 @@ import { cmdSnap } from './commands/snap.js';
 import { cmdSessions } from './commands/sessions.js';
 import { cmdNotes } from './commands/notes.js';
 import { cmdReproduce } from './commands/reproduce.js';
+import { cmdIngestSession } from './commands/ingest_session.js';
+import { cmdSessionCost } from './commands/session_cost.js';
 
 export interface ParsedArgs {
   command: string | null;
@@ -89,6 +91,15 @@ Commands:
   reindex                                 Rebuild lineage.sqlite from snapshots/.
   install-hook [--force]                  Wire harness-hook into .claude/settings.json
                                             (SessionStart + UserPromptSubmit).
+  ingest-session [<id>] [--all]           Read the per-session JSONL Claude Code wrote
+      [--since-turn N] [--dry-run]          and store metadata (model, usage, tools,
+      [--transcript-path <path>]            CC version) in turn_metrics. Whitelist-only
+                                            per spec/format.md §10.2 — no prompt text,
+                                            tool inputs, or tool results stored.
+  session-cost [<id>] [--all]             Query turn_metrics. Per-session report or
+      [--by-tool] [--by-model]              project-wide roll-up; --by-tool reports CALL
+      [--branch <name>] [--limit N]         COUNTS only (per-tool tokens NOT supportable
+      [--csv]                               per spec/format.md §10.3).
 
 Refs accept: 40-hex id, 6+-hex prefix, HEAD, branch name, tag name.
 
@@ -110,6 +121,8 @@ export async function dispatch(parsed: ParsedArgs): Promise<number> {
     case 'reproduce':    return cmdReproduce(parsed);
     case 'reindex':      return cmdReindex(parsed);
     case 'install-hook': return cmdInstallHook(parsed);
+    case 'ingest-session': return cmdIngestSession(parsed);
+    case 'session-cost':   return cmdSessionCost(parsed);
     case null:
       process.stdout.write(HELP);
       return 0;

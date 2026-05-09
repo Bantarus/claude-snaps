@@ -334,6 +334,25 @@ export class Repo {
     return this.db.sessionsAt(snapshotId);
   }
 
+  /**
+   * Distinct session ids that ever fired hooks into this `.harness/`,
+   * ordered by earliest observation. Used by `harness ingest-session
+   * --all` to enumerate transcripts to ingest.
+   */
+  sessionIds(): Array<{ sessionId: string; firstObservedAt: string }> {
+    return this.db.distinctSessionIds();
+  }
+
+  /**
+   * Distinct session ids with at least one `turn_metrics` row.
+   * Ordered by earliest ingested_at. Used by `harness session-cost
+   * --all` so backfilled sessions (ingested without attribution)
+   * are listed too.
+   */
+  ingestedSessionIds(): string[] {
+    return this.db.distinctIngestedSessionIds();
+  }
+
   // ── session metrics (v0.5.0; spec/format.md §10) ─────────────────────
 
   /**

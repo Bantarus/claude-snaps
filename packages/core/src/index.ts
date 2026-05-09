@@ -41,7 +41,7 @@ export { captureCurrentState, captureCurrentStateFast, readClaudeCodeVersion } f
 export { Repo } from './repo.js';
 export type { RepoInitOptions } from './repo.js';
 
-export { parseTranscriptJsonl, parseTranscriptText } from './ingest.js';
+export { parseTranscriptJsonl, parseTranscriptText, encodeProjectDir } from './ingest.js';
 
 export { diff, summarizeDiff, sourcesEqual } from './diff.js';
 
