@@ -14,6 +14,12 @@ import { snapshotId } from './canonical.js';
 import { IoError, IntegrityError, ParseError } from './errors.js';
 import type { Snapshot } from './types.js';
 
+// Defensive cap on individual snapshot blob size. Typical blobs are
+// well under 1 MiB even with a fat apmLockfile; 16 MiB is a sanity
+// ceiling that bounds memory exposure of readSnapshot's whole-file
+// readFileSync + JSON.parse against a hostile or corrupted blob.
+const SNAPSHOT_BLOB_MAX_BYTES = 16 * 1024 * 1024;
+
 /**
  * Read a snapshot blob from `<harnessDir>/snapshots/<aa>/<rest>.json`.
  * Verifies on read: (a) the blob is valid JSON, (b) `blob.id` matches
@@ -28,6 +34,22 @@ export function readSnapshot(harnessDir: string, id: string): Snapshot {
     throw new IntegrityError(`invalid snapshot id (must be 40 hex): ${id}`);
   }
   const path = blobPath(harnessDir, id);
+  // Bounded read: typical snapshot blobs are well under 1 MiB even
+  // with a fat apmLockfile, but a hostile or corrupted blob could be
+  // arbitrarily large. statSync precheck caps memory exposure of
+  // `readFileSync` + `JSON.parse`. SNAPSHOT_BLOB_MAX_BYTES is set
+  // generously above any defensible payload.
+  try {
+    const st = statSync(path);
+    if (st.size > SNAPSHOT_BLOB_MAX_BYTES) {
+      throw new IntegrityError(
+        `snapshot blob at ${path} is ${st.size} bytes; exceeds ${SNAPSHOT_BLOB_MAX_BYTES}-byte safety cap`,
+      );
+    }
+  } catch (cause) {
+    if (cause instanceof IntegrityError) throw cause;
+    throw new IoError(`failed to stat snapshot ${id} at ${path}`, cause);
+  }
   let raw: string;
   try {
     raw = readFileSync(path, 'utf-8');

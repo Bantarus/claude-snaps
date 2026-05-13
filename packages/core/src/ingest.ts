@@ -42,7 +42,18 @@
 // The privacy invariant is enforced empirically by W12.5 (the canary
 // fuzz gate, step 6 of v0.5.0).
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
+
+// Defensive cap on transcript JSONL size. Real Claude Code session
+// transcripts can be tens of megabytes for long sessions (a 13 MB
+// JSONL is normal for a multi-hour conversation); 256 MiB is a
+// generous ceiling that bounds memory exposure of the whole-file
+// readFileSync against a hostile or pathologically-long transcript.
+// Files above this are silently skipped (returning []) to match the
+// file-not-found behavior already in this module — the CLI surfaces
+// "0 turns ingested" to the operator. A clearer error is a future
+// refactor if a real user hits this.
+const TRANSCRIPT_MAX_BYTES = 256 * 1024 * 1024;
 
 import type { TurnRecord } from './types.js';
 
@@ -76,6 +87,11 @@ export function parseTranscriptJsonl(
 ): TurnRecordCandidate[] {
   let raw: string;
   try {
+    // statSync precheck bounds memory of the readFileSync below.
+    // statSync failure (e.g. file not found) drops into the catch
+    // and returns [], matching existing read-failure semantics.
+    const st = statSync(path);
+    if (st.size > TRANSCRIPT_MAX_BYTES) return [];
     raw = readFileSync(path, 'utf-8');
   } catch {
     return [];

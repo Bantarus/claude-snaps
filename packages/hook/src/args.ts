@@ -18,7 +18,15 @@
 // Merge rule: stdin wins over CLI wins over env. If after merging we
 // still lack session_id or cwd, throw — the hook can't operate.
 
-import { readFileSync } from 'node:fs';
+import { readSync } from 'node:fs';
+
+// Defensive cap on stdin payload size. Claude Code hook payloads are
+// ~5–6 small JSON fields (well under 1 KiB); 1 MiB is generously
+// above the largest defensible payload while still bounding memory
+// against a misbehaving host or hostile pipe input. Overflow is
+// treated as malformed and surfaces as an empty RawInputs object —
+// the hook's outer exit-0 contract (spec/hooks.md §1.5) is preserved.
+const STDIN_MAX_BYTES = 1_048_576;
 
 export type HookEventName = 'SessionStart' | 'UserPromptSubmit';
 
@@ -106,7 +114,21 @@ function readStdinJsonOrEmpty(): RawInputs {
   if (process.stdin.isTTY) return {};
   let raw: string;
   try {
-    raw = readFileSync(0, 'utf-8'); // fd 0 = stdin
+    // Bounded read: previously `readFileSync(0, 'utf-8')` read stdin
+    // to EOF with no size limit. A misbehaving host (or hostile pipe)
+    // piping a multi-GB payload would OOM the hook process — the
+    // RangeError thrown by the allocation itself bypasses our outer
+    // try/catch and breaks the spec/hooks.md §1.5 always-exit-0
+    // contract. Cap at STDIN_MAX_BYTES; overflow → return empty.
+    const buf = Buffer.allocUnsafe(STDIN_MAX_BYTES + 1);
+    let total = 0;
+    while (total <= STDIN_MAX_BYTES) {
+      const n = readSync(0, buf, total, buf.length - total, null);
+      if (n <= 0) break;
+      total += n;
+    }
+    if (total > STDIN_MAX_BYTES) return {};
+    raw = buf.subarray(0, total).toString('utf-8');
   } catch {
     return {};
   }
