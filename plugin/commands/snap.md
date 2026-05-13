@@ -1,18 +1,28 @@
 ---
-description: Capture current .claude/ composition and attach a note (auto-snapshot if composition changed; note-only attribution if unchanged).
+description: Capture current .claude/ composition. Reports whether a new snapshot blob was written or a note was attached to existing HEAD.
 disable-model-invocation: true
-allowed-tools: Bash(harness snap *)
+allowed-tools: Bash(harness snap *), Bash(harness log *)
 argument-hint: "<note>"
 ---
 
-Run `harness snap "$ARGUMENTS"` and report the result tightly:
+Step 1: Run `harness snap "$ARGUMENTS"`.
 
-- The captured snapshot id (6-8-hex prefix).
-- Whether a new snapshot blob was written (composition changed) or
-  the note attached to the existing HEAD snapshot (composition
-  unchanged) — read this from the `harness snap` output.
-- The exit code if non-zero.
+Step 2: Look at the EXACT first word of the output.
 
-Do NOT paste the raw `harness snap` output unless it errored. One
-short paragraph max. The note text was the user's, so don't
-re-quote it back.
+  - If the first word is `Captured`: a NEW snapshot blob was written.
+    The id is in that line. Then run `harness log --limit 1` and grab
+    the diff summary from the row (the bit after `▶`, e.g.
+    `~2 skills`, `+1 agent`, `+1 prompt`).
+
+    Reply with: ✦ New snapshot \`<id>\` — diff: <summary>.
+
+  - If the first word is `No`: NO new blob; only a note was attached
+    to the existing HEAD snapshot. The id is on the same line after
+    `since `. Do NOT run a second command.
+
+    Reply with: ✦ Note attached to existing HEAD \`<id>\` — composition unchanged.
+
+Do not invert the two cases. The first word of the harness output is
+the dispositive signal. Do not pre-decide before reading it.
+
+Keep the reply to that one line. No raw command output.
