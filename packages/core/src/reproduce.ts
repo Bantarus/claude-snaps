@@ -1,6 +1,6 @@
 import { copyFileSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import {
   apmLockHash as apmLockHashOf,
   parseApmLockfile,
@@ -322,7 +322,7 @@ function computeSubtractiveScope(args: {
   for (const p of currentApmPaths) {
     if (targetApmPaths.has(p)) continue;
     if (targetLocalPaths.has(p)) continue;
-    if (isPathUnderClaudeDir(p)) pathsToRemove.push(p);
+    if (isPathUnderClaudeDir(p, projectRoot)) pathsToRemove.push(p);
   }
   // Stable order — sort lexicographically so dry-run output is
   // deterministic and tests can pin the rendering.
@@ -335,12 +335,21 @@ function computeSubtractiveScope(args: {
   return { pathsToRemove, willRemoveProjectLockfile };
 }
 
-function isPathUnderClaudeDir(p: string): boolean {
-  // Restrict removal to the `.claude/` subtree. Defensive: a
-  // hypothetical lockfile that lists paths outside `.claude/` (e.g.
-  // a misconfigured `deployed_files` pointing at `/etc/...`) MUST
-  // NOT cause the reproducer to delete arbitrary files.
-  return p === '.claude' || p.startsWith('.claude/');
+function isPathUnderClaudeDir(p: string, projectRoot: string): boolean {
+  // Restrict removal to the `.claude/` subtree. Defensive: a hostile
+  // lockfile that lists paths outside `.claude/` (e.g. a crafted
+  // `deployed_files` entry like `.claude/../etc/passwd`, or an
+  // absolute path like `/etc/passwd`) MUST NOT cause the reproducer
+  // to delete arbitrary files. A previous string-prefix check
+  // accepted `.claude/...` literally including escape sequences;
+  // we now resolve both sides and require the resolved target be
+  // strictly inside (or equal to) the resolved .claude/ directory.
+  if (isAbsolute(p)) return false;
+  const claudeAbs = resolve(projectRoot, '.claude');
+  const targetAbs = resolve(projectRoot, p);
+  if (targetAbs === claudeAbs) return true;
+  const rel = relative(claudeAbs, targetAbs);
+  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────

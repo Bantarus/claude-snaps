@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { Repo, snapshotId, type Snapshot } from '../src/index.js';
 import { setupLocalApmSource, setupProjectWithApmDep } from './fixtures/apm-fixture.js';
@@ -371,8 +371,15 @@ describe('Repo.reproduce — subtractive within scope (gate 22, v0.4.1)', () => 
     // .claude/. (We don't go through APM for this — write the YAML
     // by hand to simulate the malicious case.) The first entry is
     // the real deployed skill path (so the cleanup actually attempts
-    // to remove something); the second and third are out-of-scope
-    // paths that the defensive filter MUST refuse to touch.
+    // to remove something); the rest are hostile out-of-scope paths
+    // the defensive filter MUST refuse to touch:
+    //   - IMPORTANT-USER-FILE.txt: bare project-root file
+    //   - ../../etc/passwd: relative parent-escape
+    //   - .claude/../etc/passwd: parent-escape DISGUISED as a .claude
+    //     prefix (this is the case the pre-2026-05-13 string-prefix
+    //     check accepted and which path.join would resolve as
+    //     `<projectRoot>/etc/passwd`)
+    //   - /etc/passwd: absolute path (path.join leaves it alone on POSIX)
     writeFileSync(join(proj, 'apm.lock.yaml'), `
 lockfile_version: '1'
 dependencies:
@@ -383,6 +390,8 @@ dependencies:
       - .claude/skills/${fixture.skillName}
       - IMPORTANT-USER-FILE.txt
       - ../../etc/passwd
+      - .claude/../etc/passwd
+      - /etc/passwd
 `, 'utf-8');
 
     const repo = Repo.init(proj);
@@ -415,10 +424,24 @@ dependencies:
       expect(existsSync('/etc/passwd')).toBe(true);
       // The in-scope path was removed.
       expect(result.pathsRemoved).toContain(`.claude/skills/${fixture.skillName}`);
-      // The marker is NOT in the removal list.
+      // None of the hostile entries are in the removal list.
       expect(result.pathsRemoved).not.toContain('IMPORTANT-USER-FILE.txt');
-      // No traversal escapes.
-      expect(result.pathsRemoved.every((p) => p.startsWith('.claude'))).toBe(true);
+      expect(result.pathsRemoved).not.toContain('../../etc/passwd');
+      expect(result.pathsRemoved).not.toContain('.claude/../etc/passwd');
+      expect(result.pathsRemoved).not.toContain('/etc/passwd');
+      // Strongest invariant: ONLY the in-scope deployed path was
+      // removed. Any future entry that slips through the
+      // resolved-path check would fail this length assertion before
+      // doing any damage.
+      expect(result.pathsRemoved).toHaveLength(1);
+      // Belt-and-suspenders: each removed path resolves strictly
+      // inside the project's .claude/ subtree.
+      const claudeAbs = resolve(proj, '.claude');
+      for (const p of result.pathsRemoved) {
+        const abs = resolve(proj, p);
+        const rel = relative(claudeAbs, abs);
+        expect(rel === '' || (!rel.startsWith('..') && !rel.startsWith('/'))).toBe(true);
+      }
       void initId;
     } finally {
       repo.close();
