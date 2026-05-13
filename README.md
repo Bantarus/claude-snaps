@@ -1,5 +1,12 @@
 # claude-snaps
 
+> [!WARNING]
+> **Experimental.** This project is in active development. The `.harness/`
+> format, the `harness` CLI surface, and the Claude Code plugin are not
+> yet stable — breaking changes can land between minor versions. Treat
+> any snapshots, hooks, or settings written by this tool as disposable
+> while you evaluate. Not recommended for production use.
+
 A reference implementation and format spec for **agent-harness snapshot
 lineage** — a `.harness/` directory that lives alongside your project
 and records every change to the active Claude Code primitives
