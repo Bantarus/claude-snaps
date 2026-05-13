@@ -244,9 +244,9 @@ layer that prospective probing couldn't surface:
   `PILOT_PARTIAL_STATE` token.
 
 Lesson reinforced for the spec-vs-reality discipline (now
-[memory feedback_spec_vs_reality.md](~/.claude/projects/-home-bantarus-DEV-claude-snaps/memory/feedback_spec_vs_reality.md)
-confirmation #6): step 0 prospective probing reduces but does not
-eliminate authoring-time and integration-time discoveries.
+`memory/feedback_spec_vs_reality.md` confirmation #6 in the
+maintainer's local auto-memory): step 0 prospective probing reduces
+but does not eliminate authoring-time and integration-time discoveries.
 Step 12's job was to surface what step 0 couldn't, and it did.
 Both fixes were small, in-skill / in-subagent edits — no
 architectural change.

@@ -22,7 +22,7 @@ Read those changes in the spec before writing skills:
 - [spec/format.md §10](../spec/format.md#10-session-metrics-v050) — turn_metrics, normative redaction whitelist
 - [spec/hooks.md §1.1](../spec/hooks.md#11-channel-a--stdin-json-primary-claude-code-native) — 4-event inventory, last_assistant_message privacy class
 - [packages/cli/README.md](../packages/cli/README.md) — current CLI surface (v0.5.0)
-- [memory/v0_5_milestone.md](~/.claude/projects/-home-bantarus-DEV-claude-snaps/memory/v0_5_milestone.md) (auto-loaded if you have memory) — summary of the framing shift
+- `memory/v0_5_milestone.md` (maintainer's local auto-memory; auto-loaded if you have memory) — summary of the framing shift
 
 ## Mandatory pre-flight: prospective verified-pins probe
 
@@ -31,8 +31,8 @@ contract empirically. This applies the same v0.4.2 spec-vs-reality
 discipline that produced the verified-pins section of
 [docs/session-metrics-prompt.md](session-metrics-prompt.md) — the
 discipline saved that work-package ~1 hour of cold-start probing
-(see [memory/feedback_spec_vs_reality.md](~/.claude/projects/-home-bantarus-DEV-claude-snaps/memory/feedback_spec_vs_reality.md)
-for the recurring pattern; this would be confirmation #5).
+(see `memory/feedback_spec_vs_reality.md` in the maintainer's local
+auto-memory for the recurring pattern; this would be confirmation #5).
 
 **Why prospectively, not after a failure:** the plugin format
 (skills/, agents/, commands/, hooks/, .claude-plugin/plugin.json)
@@ -324,7 +324,7 @@ spec-grounded answers.
 ## Verified pins (plugin)
 
 Probed prospectively on **2026-05-09** against **Claude Code 2.1.128**
-(`~/.local/bin/claude`) and **APM 0.8.11**. Each probe used
+(via `~/.local/bin/claude`) and **APM 0.8.11**. Each probe used
 a throwaway scaffold under `$CIP_SCRATCH/l3-probe-plugin-*/`. Locked
 answers are codified at
 [scripts/dogfood-v0_4/local_cases/l3_plugin_pre_flight.sh](../scripts/dogfood-v0_4/local_cases/l3_plugin_pre_flight.sh)

@@ -202,7 +202,7 @@ HARNESS_HOOK="$PWD/packages/hook/bin/harness-hook" \
 
 # Confirm the case fails with the expected diagnostic, then clean up.
 git reset --hard HEAD
-cd ~/DEV/claude-snaps     # or wherever your main worktree is
+cd /path/to/claude-snaps               # or wherever your main worktree is
 git worktree remove --force /tmp/cip2
 ```
 

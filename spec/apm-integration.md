@@ -12,6 +12,15 @@ to specific upstream commits.
 The rest of this document uses **APM** to refer to that ecosystem and its
 artifacts; **harness** to refer to `.harness/`.
 
+> **Note on examples.** Package names like `microsoft/apm-sample-package`,
+> `microsoft/common-utilities`, `microsoft/research-skills`, and
+> `microsoft/senior-eng` that appear in fixtures and examples throughout
+> this document are **illustrative only** — they do not exist on
+> GitHub. Only [`microsoft/apm`](https://github.com/microsoft/apm)
+> itself is a real package. Don't try to `apm install` the illustrative
+> names; they're chosen to make the example structure clear without
+> binding documentation to any actual third-party repo.
+
 ## 1. Discovery
 
 At snapshot time, the writer (the SessionStart hook, a CLI `commit`, etc.)
