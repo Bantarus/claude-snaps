@@ -11,6 +11,16 @@ on:
       - '.github/workflows/ci-playbook.yml'
   workflow_dispatch:
 
+# Minimum permissions. The playbook only reads code, builds, runs
+# tests, and uploads an artifact on failure (which uses the default
+# `actions: write` granted to `upload-artifact` regardless of this
+# block). Explicit `contents: read` keeps GITHUB_TOKEN narrow if a
+# future step is ever added — belt-and-suspenders against
+# permission drift, recommended by the 2026-05-13 pre-public-release
+# security review (docs/security-review-2026-05-13.md #12).
+permissions:
+  contents: read
+
 # Avoid running redundant playbook jobs for the same ref.
 concurrency:
   group: ci-playbook-${{ github.ref }}

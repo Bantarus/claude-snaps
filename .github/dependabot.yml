@@ -1,0 +1,29 @@
+# Dependabot configuration — pre-public-release hardening per
+# docs/security-review-2026-05-13.md #13. Surfaces CVE advisories on
+# pinned deps as PRs rather than leaving them silently stale.
+#
+# Two ecosystems matter for this repo:
+#   - npm: production deps (yaml) + dev deps (vitest, tsx, typescript)
+#   - github-actions: workflow uses actions/checkout, actions/setup-node,
+#     pnpm/action-setup, actions/upload-artifact — currently tag-pinned.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - npm
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
