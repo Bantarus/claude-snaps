@@ -1,6 +1,6 @@
 # `.harness/` — Agent harness lineage format
 
-> **Status:** Working Draft v0.4.0 — unstable, may change without notice until v1.0.
+> **Status:** Working Draft v0.5.0 — unstable, may change without notice until v1.0.
 > **Editors:** the harness-snaps authors.
 > **Format:** Markdown, JSON Schema 2020-12, SQLite schema (SQL DDL).
 > **Conformance terminology:** [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119) (MUST / SHOULD / MAY).
