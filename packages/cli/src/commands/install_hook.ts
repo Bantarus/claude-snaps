@@ -65,12 +65,12 @@ export async function cmdInstallHook(parsed: ParsedArgs): Promise<number> {
     throw new IoError(`not in a harness repo (no .harness/ at ${cwd}). Run 'harness init' first.`);
   }
 
-  // 2. Ensure .claude/ exists; create on demand with a heads-up.
+  // 2. Compute .claude/ path. We DO NOT create it here — that has to
+  //    wait until after the user confirms (step 9) so a `n` answer
+  //    leaves zero side effects. Downstream steps (read settings,
+  //    git hygiene, symlink check) all handle a missing .claude/.
   const claudeDir = join(cwd, '.claude');
-  if (!existsSync(claudeDir)) {
-    mkdirSync(claudeDir, { recursive: true });
-    process.stderr.write(`Created .claude/ — this is normally Claude Code's config dir.\n`);
-  }
+  const claudeDirCreatedHere = !existsSync(claudeDir);
 
   const settingsPath = join(claudeDir, 'settings.json');
 
@@ -200,7 +200,13 @@ export async function cmdInstallHook(parsed: ParsedArgs): Promise<number> {
     return 0;
   }
 
-  // 10. Atomic write of the new settings.
+  // 10. Now that the user has confirmed, ensure .claude/ exists
+  //     (deferred from step 2 so a `n` answer leaves no side effects)
+  //     and atomically write the new settings.
+  if (claudeDirCreatedHere) {
+    mkdirSync(claudeDir, { recursive: true });
+    process.stderr.write(`Created .claude/ — this is normally Claude Code's config dir.\n`);
+  }
   atomicWrite(settingsPath, afterStr + '\n');
   process.stdout.write(
     `Hook installed. Next session start AND every user prompt in this ` +

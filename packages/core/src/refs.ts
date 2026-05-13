@@ -17,6 +17,24 @@ const REF_NAME_RE = /^[A-Za-z0-9._/-]+$/;
 const ID_RE = /^[0-9a-f]{40}$/;
 
 /**
+ * Validate a branch or ref-segment name (no leading `refs/...` path).
+ * Same character class and exclusions as validateRefPath but exported
+ * for callers (Repo.init's --branch, branch/tag commands) that
+ * receive a bare name from the user.
+ *
+ * @throws {IntegrityError} when the name contains anything outside
+ * [A-Za-z0-9._/-], a `..` segment, a `.lock` suffix, or is absolute.
+ */
+export function validateRefName(name: string): void {
+  if (!REF_NAME_RE.test(name) || name.includes('..') || name.endsWith('.lock')) {
+    throw new IntegrityError(`invalid ref name: ${JSON.stringify(name)}`);
+  }
+  if (posix.isAbsolute(name)) {
+    throw new IntegrityError(`ref name must be relative: ${name}`);
+  }
+}
+
+/**
  * Read `<harnessDir>/HEAD`. Returns:
  *   - { type: 'symbolic', ref } when HEAD contains "ref: <path>"
  *   - { type: 'detached', id } when HEAD contains a 40-hex id

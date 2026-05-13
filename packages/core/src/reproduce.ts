@@ -1,5 +1,6 @@
 import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import {
   apmLockHash as apmLockHashOf,
@@ -88,7 +89,8 @@ export function reproduceSnapshot(args: {
     // reproducer cannot act on them.
   }
 
-  const backupPath = computeBackupPath(projectRoot);
+  const backupSuffix = computeBackupSuffix();
+  const backupPath = computeBackupPath(projectRoot, backupSuffix);
   const headPath = join(harnessDir, 'HEAD');
 
   // SUBTRACTIVE CLEANUP PRECOMPUTE (v0.4.1; spec §6.1).
@@ -147,7 +149,9 @@ export function reproduceSnapshot(args: {
     // SAFETY: the type-narrowed snapshot.apmLockfile is non-null per the
     // willRunApm check above; the assertion is for the type checker.
     const lockfileContent = snapshot.apmLockfile as string;
-    writeApmLockfile(projectRoot, lockfileContent);
+    writeApmLockfile(projectRoot, lockfileContent, {
+      backupSuffix: `harness-backup-${backupSuffix}`,
+    });
     const installResult = runApmInstallLocked(projectRoot);
     if (!installResult.success) {
       apmPhase = 'failed';
@@ -366,12 +370,21 @@ function chooseApmPhaseForDryRun(snap: Snapshot, _apmModuleCount: number): Repro
   return 'success';
 }
 
-function computeBackupPath(projectRoot: string): string {
-  // ISO-8601 with `:` and `.` replaced by `-` to make the directory name
-  // shell-safe across platforms. Matches the shape documented in
-  // format.md §6.1's "Side effects" section.
+function computeBackupSuffix(): string {
+  // ISO-8601 timestamp (`:`/`.` → `-` for shell-safety) plus a short
+  // random hex so rapid double-invocations within the same
+  // millisecond don't collide. Pre-2026-05-13 the suffix was ms-
+  // precision ISO alone, which silently merged two backups via
+  // mkdirSync({recursive:true}) + cpSync({recursive:true}) when
+  // collisions occurred.
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
-  return join(projectRoot, `.claude.harness-backup-${ts}`);
+  const rand = randomBytes(3).toString('hex');
+  return `${ts}-${rand}`;
+}
+
+function computeBackupPath(projectRoot: string, suffix: string): string {
+  // Matches the shape documented in format.md §6.1's "Side effects".
+  return join(projectRoot, `.claude.harness-backup-${suffix}`);
 }
 
 function backupClaudeDir(projectRoot: string, backupPath: string): void {

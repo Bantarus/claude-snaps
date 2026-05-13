@@ -285,11 +285,19 @@ export function readApmLockfileContent(
 export function writeApmLockfile(
   projectRoot: string,
   content: string,
-  filename: string = DEFAULT_LOCKFILE,
+  options: { filename?: string; backupSuffix?: string } = {},
 ): void {
+  const filename = options.filename ?? DEFAULT_LOCKFILE;
+  // backupSuffix lets the caller (e.g. reproduce) version the backup
+  // alongside its .claude.harness-backup-<ts-rand>/ dir. The default
+  // `harness-backup` keeps backward compatibility for any future
+  // direct callers, but reproduce passes a unique suffix per run so
+  // a second reproduce doesn't silently overwrite the first run's
+  // lockfile-pre-state.
+  const backupSuffix = options.backupSuffix ?? 'harness-backup';
   const path = join(projectRoot, filename);
   if (existsSync(path)) {
-    const backupPath = `${path}.harness-backup`;
+    const backupPath = `${path}.${backupSuffix}`;
     try {
       copyFileSync(path, backupPath);
     } catch (cause) {

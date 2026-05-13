@@ -14,7 +14,7 @@ import { captureCurrentState } from './capture.js';
 import { EmptyRepositoryError, IntegrityError, InvalidStateError, IoError } from './errors.js';
 import { IndexDb, type ListSnapshotsFilter, type ReindexResult } from './index_db.js';
 import { parseTranscriptJsonl } from './ingest.js';
-import { listRefs, readHead, readRef, resolveHead, writeRef } from './refs.js';
+import { listRefs, readHead, readRef, resolveHead, validateRefName, writeRef } from './refs.js';
 import { reproduceSnapshot } from './reproduce.js';
 import type {
   Attribution, AttributionEventKind, DiffOp, HeadState,
@@ -67,6 +67,11 @@ export class Repo {
   static init(projectRoot: string, options: RepoInitOptions = {}): Repo {
     const harnessDir = join(projectRoot, '.harness');
     const branch = options.defaultBranch ?? DEFAULT_BRANCH;
+    // Validate the branch name BEFORE any directory creation so a bad
+    // value (newline, '..', absolute, .lock-suffix) doesn't leave a
+    // partially-initialized .harness/ on disk. Matches the validation
+    // every other ref-writing path performs (writeRef, branch, tag).
+    validateRefName(branch);
     try {
       mkdirSync(join(harnessDir, 'snapshots'), { recursive: true });
       mkdirSync(join(harnessDir, 'refs', 'heads'), { recursive: true });

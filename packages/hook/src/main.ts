@@ -84,11 +84,14 @@ export async function run(argv: string[]): Promise<void> {
 
     // Refresh the cache for the next fire. Best-effort: a failure here
     // does NOT undo the attribution; the next fire just full-walks.
+    // Suppress the failure entirely — Claude Code surfaces hook stderr
+    // to the user, and a "cache write failed" warning on every fire is
+    // noise that doesn't tell the user anything actionable. Per
+    // spec/hooks.md §1.5, the hook is defense-in-depth quiet.
     try {
       repo.writeObservationCache(args.sessionId, fastHash, snapshotId);
-    } catch (cacheErr) {
-      const msg = cacheErr instanceof Error ? cacheErr.message : String(cacheErr);
-      process.stderr.write(`harness-hook: warn: cache write failed: ${msg}\n`);
+    } catch {
+      // intentionally silent
     }
   } catch (err) {
     // Defense in depth: never give the host a non-zero exit.
