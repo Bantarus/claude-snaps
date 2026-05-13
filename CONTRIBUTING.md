@@ -19,7 +19,7 @@ nvm use                    # picks up .nvmrc → Node 24
 corepack enable            # makes pnpm available
 pnpm install               # workspace install, no native compilation
 pnpm -r run build          # build all packages
-pnpm -r run test           # 145 tests across 4 packages
+pnpm -r run test           # 246 tests across 3 packages
 ```
 
 ## Running the binaries from this monorepo
@@ -190,6 +190,25 @@ while the hook stdin contract uses `session_id` (snake_case). Both refer
 to the same UUID; don't conflate when cross-referencing across the two
 formats.
 
+## Working on the Claude Code plugin
+
+The plugin under [`plugin/`](plugin/) is a thin orchestration layer
+over the same `harness` and `harness-hook` binaries — skills, slash
+commands, subagents, and hooks. Quickest dev loop:
+
+```bash
+# Point Claude Code at this repo's plugin directly:
+claude --plugin-dir "$(pwd)/plugin"
+```
+
+Edit files under `plugin/skills/`, `plugin/commands/`, `plugin/agents/`,
+or `plugin/hooks/` and restart Claude Code to pick up changes. The
+plugin assumes the `harness` and `harness-hook` binaries are on
+`$PATH` (per "Running the binaries from this monorepo" above).
+
+See [`plugin/README.md`](plugin/README.md) for the user-facing install
+instructions and the plugin's surface area.
+
 ## Releasing (future)
 
 When the project ships via npm, `pnpm link --global` goes away —
@@ -199,13 +218,22 @@ maintainers to try the binaries against real workloads.
 
 ## Test gates
 
-A change to any package must keep all four gates green before merging:
+A change to any package must keep all gates green before merging:
 
 ```bash
-pnpm --filter @harness/core test   # gate 4: 94 tests
-pnpm --filter @harness/cli  test   # gate 5: 35 tests
-pnpm --filter @harness/hook test   # gate 6: 16 tests
-pnpm --filter @harness/cli exec vitest run test/e2e.test.ts   # gate 7: 2 tests
-python3 scripts/check_schema_agreement.py    # spec gate: SQL CHECK ↔ JSON Schema
-python3 scripts/build_examples.py            # spec gate: examples regenerate identically
+pnpm --filter @harness/core test    # 151 tests
+pnpm --filter @harness/cli  test    # 72 tests
+pnpm --filter @harness/hook test    # 23 tests
+python3 scripts/check_schema_agreement.py     # spec gate: SQL CHECK ↔ JSON Schema
+python3 scripts/check_format_version_bump.py  # spec gate: version-bump invariants
+python3 scripts/build_examples.py             # spec gate: examples regenerate identically
+bash scripts/dogfood-v0_4/ci-playbook.sh      # 71-case TAP 14 end-to-end playbook (the contract)
 ```
+
+The CI playbook under [`scripts/dogfood-v0_4/`](scripts/dogfood-v0_4/)
+is the load-bearing real-binary test surface — it runs against the
+actual `harness` and `harness-hook` builds the same way a user would,
+and it replaces the prior real-world dogfooding observation channel.
+GitHub Actions runs it on every push to `main` and every PR touching
+`packages/**`, `spec/**`, `scripts/**`, or the workflow itself; see
+[`.github/workflows/ci-playbook.yml`](.github/workflows/ci-playbook.yml).
