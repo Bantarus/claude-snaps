@@ -1,4 +1,4 @@
-import { copyFileSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import {
@@ -376,10 +376,28 @@ function computeBackupPath(projectRoot: string): string {
 
 function backupClaudeDir(projectRoot: string, backupPath: string): void {
   const claudeDir = join(projectRoot, '.claude');
+  // Refuse if .claude/ is a symlink. cpSync follows symlinks by
+  // default, so a hostile or accidental link from .claude/ to a
+  // wider tree (or to a sibling project's .claude/) would copy that
+  // tree into the backup AND the subsequent subtractive rmSync
+  // could traverse it. Honest fail-fast: tell the user to resolve
+  // the link before reproduce.
+  if (existsSync(claudeDir)) {
+    try {
+      if (lstatSync(claudeDir).isSymbolicLink()) {
+        throw new IntegrityError(
+          `${claudeDir} is a symbolic link; refusing to reproduce through it. Resolve the link (e.g. \`rm .claude && cp -r <target> .claude\`) and re-run.`,
+        );
+      }
+    } catch (cause) {
+      if (cause instanceof IntegrityError) throw cause;
+      // lstat failed for non-symlink-related reasons; fall through.
+    }
+  }
   try {
     mkdirSync(backupPath, { recursive: true });
     if (existsSync(claudeDir)) {
-      cpSync(claudeDir, backupPath, { recursive: true });
+      cpSync(claudeDir, backupPath, { recursive: true, verbatimSymlinks: true });
     }
     // If .claude/ doesn't exist, the backup is an empty directory. The
     // contract is "back up before any write" — the empty directory is

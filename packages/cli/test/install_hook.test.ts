@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runCli } from './util.js';
@@ -191,5 +191,50 @@ describe('harness install-hook', () => {
     const r = await runCli(['install-hook'], { cwd, input: 'y\n' });
     expect(r.code).toBe(1);
     expect(r.stderr).toMatch(/not valid JSON/);
+  });
+
+  test('refuses when .claude/ is a symbolic link', async () => {
+    // Defensive: an accidental or hostile symlink at .claude/ would
+    // make install-hook write through the link into the target tree.
+    // The guard refuses unless --force is passed.
+    const cwd = freshProject();
+    await initRepo(cwd);
+    const linkTarget = mkdtempSync(join(tmpdir(), 'harness-link-target-'));
+    rmSync(join(cwd, '.claude'), { recursive: true, force: true });
+    symlinkSync(linkTarget, join(cwd, '.claude'));
+    const r = await runCli(['install-hook'], { cwd, input: 'y\n' });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toMatch(/symbolic link/);
+    // Settings file in the target was NOT created.
+    expect(existsSync(join(linkTarget, 'settings.json'))).toBe(false);
+  });
+
+  test('refuses when .claude/settings.json is a symbolic link', async () => {
+    const cwd = freshProject();
+    await initRepo(cwd);
+    mkdirSync(join(cwd, '.claude'), { recursive: true });
+    const linkTarget = join(mkdtempSync(join(tmpdir(), 'harness-link-target-')), 'evil-settings.json');
+    writeFileSync(linkTarget, '{}', 'utf-8');
+    symlinkSync(linkTarget, join(cwd, '.claude/settings.json'));
+    const r = await runCli(['install-hook'], { cwd, input: 'y\n' });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toMatch(/symbolic link/);
+    // Link target was NOT overwritten.
+    expect(readFileSync(linkTarget, 'utf-8')).toBe('{}');
+  });
+
+  test('--force overrides the symlink guard on settings.json', async () => {
+    // Mirror of the prior test, but with --force: confirms the
+    // escape hatch works for users who knowingly maintain a
+    // symlinked settings.json.
+    const cwd = freshProject();
+    await initRepo(cwd);
+    gitInitWithCommit(cwd);
+    mkdirSync(join(cwd, '.claude'), { recursive: true });
+    const linkTarget = join(mkdtempSync(join(tmpdir(), 'harness-link-target-')), 'real-settings.json');
+    writeFileSync(linkTarget, '{}', 'utf-8');
+    symlinkSync(linkTarget, join(cwd, '.claude/settings.json'));
+    const r = await runCli(['install-hook', '--force'], { cwd, input: 'y\n' });
+    expect(r.code).toBe(0);
   });
 });

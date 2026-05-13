@@ -3,6 +3,7 @@ import {
   closeSync,
   existsSync,
   fsyncSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -72,6 +73,40 @@ export async function cmdInstallHook(parsed: ParsedArgs): Promise<number> {
   }
 
   const settingsPath = join(claudeDir, 'settings.json');
+
+  // 2.5. Refuse on symlinks. install-hook writes (via .bak backup +
+  //      atomic temp+rename) to settings.json; if .claude/ or
+  //      settings.json is a symlink — accidental or hostile — we
+  //      would follow it and target the link's destination, which
+  //      could be any file the user can write. lstatSync inspects
+  //      the link itself rather than its target. --force is the
+  //      escape hatch for users who knowingly maintain a symlinked
+  //      .claude/.
+  if (!force) {
+    try {
+      if (lstatSync(claudeDir).isSymbolicLink()) {
+        throw new IoError(
+          `.claude/ is a symbolic link. Refusing to write through it; pass --force to override.`,
+        );
+      }
+    } catch (cause) {
+      if (cause instanceof IoError) throw cause;
+      // lstat of an absent .claude/ shouldn't happen (we just created
+      // it or verified it above), but if it does, fall through.
+    }
+    if (existsSync(settingsPath)) {
+      try {
+        if (lstatSync(settingsPath).isSymbolicLink()) {
+          throw new IoError(
+            `.claude/settings.json is a symbolic link. Refusing to write through it; pass --force to override.`,
+          );
+        }
+      } catch (cause) {
+        if (cause instanceof IoError) throw cause;
+        // Same fall-through as above.
+      }
+    }
+  }
 
   // 3. Git hygiene: refuse if settings.json has unstaged changes (only
   //    when in a git repo and --force is not set). Untracked ('??') and
