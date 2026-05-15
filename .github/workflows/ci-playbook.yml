@@ -78,7 +78,7 @@ jobs:
 
       - name: Upload scratch state on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cip-scratch-${{ github.run_id }}
           path: /tmp/cip-scratch
