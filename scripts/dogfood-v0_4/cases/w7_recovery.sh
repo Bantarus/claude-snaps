@@ -91,6 +91,6 @@ w7_6_dangling_branch_ref() {
   local rc=$?
   assert_exit 1 "$rc" "checkout dangling main exits 1"
   assert_contains "$out" "0000000000000000000000000000000000000000" "error names the dangling id"
-  assert_contains "$out" "failed to read snapshot" "IoError clearly stated"
+  assert_contains "$out" "IoError" "IoError clearly stated"
 }
 register_case "W7.6 checkout dangling branch ref exits 1 with IoError" w7_6_dangling_branch_ref
