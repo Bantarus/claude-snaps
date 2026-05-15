@@ -6,11 +6,11 @@ content-addressable lineage. APM-driven reproducer with a subtractive
 contract (spec/format.md §6.1). v0.5.0 adds session-metrics ingestion
 with a strict privacy whitelist (§10.2).
 
-This plugin is a thin orchestration layer on top of the
-[`@harness/cli`](https://www.npmjs.com/package/@harness/cli) (the
-`harness` and `harness-hook` binaries). The plugin removes the "user
-must know what to type" friction by routing natural-language questions
-to the right CLI verb via skills, subagents, and slash commands.
+This plugin is a thin orchestration layer on top of the `@harness/cli`
+package (the `harness` and `harness-hook` binaries). The plugin
+removes the "user must know what to type" friction by routing
+natural-language questions to the right CLI verb via skills,
+subagents, and slash commands.
 
 ## Install
 
@@ -18,16 +18,21 @@ Two pieces, installed separately.
 
 ### 1. The CLI
 
-```bash
-npm install -g @harness/cli
-```
+`@harness/cli` is **not yet published to npm**. Install from source
+via the main repo's [Quick start](../README.md#quick-start) — either
+the manual `pnpm install` + `pnpm link --global` path, or the
+"let Claude Code do the install for you" scaffolding prompt.
 
-Verify with `harness --help` and `harness-hook --version`. Both binaries
+Verify with `harness --help` (proves the CLI runs) and `which
+harness-hook` (proves the hook binary is on `PATH`). Both binaries
 must be on `PATH` before the plugin's hooks can fire.
+
+When `@harness/cli` eventually ships to npm, this step will simplify
+to `npm install -g @harness/cli`.
 
 ### 2. The plugin
 
-**Local development:**
+**Local development (current path):**
 
 ```bash
 claude --plugin-dir /path/to/claude-snaps/plugin
@@ -36,15 +41,18 @@ claude --plugin-dir /path/to/claude-snaps/plugin
 Loads the plugin for that session only. Repeat the flag to layer
 multiple plugins.
 
-**Persistent (Claude Code marketplace, recommended):**
+**Claude Code marketplace — pending listing:**
+
+The plugin is not yet listed in the Claude Code marketplace. Once it
+is, the install path will be:
 
 ```
-> /plugin install bantarus/harness
+> /plugin install Bantarus/harness
 ```
 
-Distribution is currently `--plugin-dir`-only and Claude Code
-marketplace; APM hybrid distribution is deferred (APM 0.8.x doesn't
-deploy plugin-format primitives — see
+In the meantime, use `--plugin-dir` from a checkout. APM hybrid
+distribution is deferred (APM 0.8.x doesn't deploy plugin-format
+primitives — see
 [docs/plugin-kickoff-prompt.md "Probe 8"](../docs/plugin-kickoff-prompt.md)).
 Re-evaluate when APM 0.9+ ships.
 
