@@ -23,7 +23,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "yaml": "^2.5.0"
+    "yaml": "^2.9.0"
   },
   "engines": {
     "node": ">=24.0"
