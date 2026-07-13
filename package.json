@@ -12,7 +12,7 @@
     "spec:check-agreement": "python3 scripts/check_schema_agreement.py"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.1.0",
     "tsx": "^4.16.2",
     "typescript": "^5.5.3",
     "vitest": "^3.0.0"
